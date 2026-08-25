@@ -3,32 +3,34 @@ require("dotenv").config();
 const {
   Client,
   GatewayIntentBits,
+  Partials,
   Collection
 } = require("discord.js");
 
 const {
   initDatabase,
   addCoin
-} = require("./database/database");
+} = require("../database/database");
 
-// Commands
 const balanceCommand = require("./commands/balance");
-const withdrawCommand = require("./withdraw");
-const leaderboardCommand = require("./leaderboard");
+const withdrawCommand = require("./commands/withdraw");
+const leaderboardCommand = require("./commands/leaderboard");
 
-// Create Discord client
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
+    GatewayIntentBits.MessageContent,
+    GatewayIntentBits.DirectMessages
+  ],
+
+  partials: [
+    Partials.Channel
   ]
 });
 
-// Command collection
 client.commands = new Collection();
 
-// Register commands
 client.commands.set(
   balanceCommand.data.name,
   balanceCommand
@@ -44,12 +46,9 @@ client.commands.set(
   leaderboardCommand
 );
 
-// Bot ready
 client.once("ready", async () => {
-  console.log("=================================");
   console.log("✅ Eclipsera Earning Bot is online!");
   console.log(`🤖 Logged in as ${client.user.tag}`);
-  console.log("=================================");
 
   try {
     await initDatabase();
@@ -60,7 +59,6 @@ client.once("ready", async () => {
   }
 });
 
-// Give 1 coin for every normal message
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
   if (!message.guild) return;
@@ -77,7 +75,6 @@ client.on("messageCreate", async (message) => {
   }
 });
 
-// Handle slash commands
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
@@ -85,45 +82,25 @@ client.on("interactionCreate", async (interaction) => {
     interaction.commandName
   );
 
-  if (!command) {
-    console.log(
-      `⚠️ Unknown command: ${interaction.commandName}`
-    );
-    return;
-  }
+  if (!command) return;
 
   try {
     await command.execute(interaction);
   } catch (error) {
-    console.error(
-      `❌ Error in /${interaction.commandName}:`
-    );
-    console.error(error);
+    console.error("❌ Command error:", error);
 
-    try {
-      if (interaction.replied || interaction.deferred) {
-        await interaction.followUp({
-          content: "❌ Something went wrong.",
-          ephemeral: true
-        });
-      } else {
-        await interaction.reply({
-          content: "❌ Something went wrong.",
-          ephemeral: true
-        });
-      }
-    } catch (replyError) {
-      console.error("❌ Could not send error reply:");
-      console.error(replyError);
+    if (interaction.replied || interaction.deferred) {
+      await interaction.followUp({
+        content: "❌ Something went wrong.",
+        ephemeral: true
+      });
+    } else {
+      await interaction.reply({
+        content: "❌ Something went wrong.",
+        ephemeral: true
+      });
     }
   }
 });
 
-// Check Discord token
-if (!process.env.DISCORD_TOKEN) {
-  console.error("❌ DISCORD_TOKEN is missing from Railway Variables!");
-  process.exit(1);
-}
-
-// Login
 client.login(process.env.DISCORD_TOKEN);
