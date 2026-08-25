@@ -7,9 +7,8 @@ const {
   getUser,
   createUser,
   pool
-} = require("../database/database");
+} = require("./database/database");
 
-// Resource rates
 const RATES = {
   bread: 10000,
   wood: 5000,
@@ -38,7 +37,7 @@ module.exports = {
           { name: "🪵 Wood", value: "wood" },
           { name: "🪨 Stone", value: "stone" },
           { name: "💧 Water", value: "water" },
-          { name: "⚒️ Iron", value: "iron" }
+          { name: "⛓️ Iron", value: "iron" }
         )
     )
 
@@ -89,7 +88,9 @@ module.exports = {
         [discordId, resource]
       );
 
-      const todayAmount = Number(dailyResult.rows[0].total);
+      const todayAmount = Number(
+        dailyResult.rows[0].total
+      );
 
       if (todayAmount + amount > MAX_AMOUNT) {
         const remaining = Math.max(
@@ -107,8 +108,9 @@ module.exports = {
       const updateResult = await pool.query(
         `
         UPDATE users
-        SET coins = coins - $1,
-            reserved_coins = reserved_coins + $1
+        SET
+          coins = coins - $1,
+          reserved_coins = reserved_coins + $1
         WHERE discord_id = $2
           AND coins >= $1
         RETURNING coins
@@ -118,7 +120,8 @@ module.exports = {
 
       if (updateResult.rowCount === 0) {
         return interaction.reply({
-          content: "❌ Your coin balance changed. Please try again."
+          content:
+            "❌ Your coin balance changed. Please try again."
         });
       }
 
@@ -130,7 +133,12 @@ module.exports = {
           ($1, $2, $3, $4, 'PENDING')
         RETURNING id
         `,
-        [discordId, resource, amount, coinCost]
+        [
+          discordId,
+          resource,
+          amount,
+          coinCost
+        ]
       );
 
       const requestId = requestResult.rows[0].id;
@@ -150,59 +158,62 @@ module.exports = {
         ]
       );
 
-      // Send request to the admin channel
       if (ADMIN_CHANNEL_ID) {
-        const channel = await interaction.client.channels.fetch(
-          ADMIN_CHANNEL_ID
-        );
+        try {
+          const channel =
+            await interaction.client.channels.fetch(
+              ADMIN_CHANNEL_ID
+            );
 
-        if (channel) {
-          const embed = new EmbedBuilder()
-            .setTitle("📦 New Withdrawal Request")
-            .setDescription(
-              `A new withdrawal request has been submitted.`
-            )
-            .addFields(
-              {
-                name: "👤 Player",
-                value: `<@${discordId}>`,
-                inline: true
-              },
-              {
-                name: "📦 Resource",
-                value: resource.toUpperCase(),
-                inline: true
-              },
-              {
-                name: "🔢 Amount",
-                value: amount.toLocaleString(),
-                inline: true
-              },
-              {
-                name: "🪙 Coin Cost",
-                value: coinCost.toLocaleString(),
-                inline: true
-              },
-              {
-                name: "🆔 Request ID",
-                value: `#${requestId}`,
-                inline: true
-              },
-              {
-                name: "📌 Status",
-                value: "PENDING",
-                inline: true
-              }
-            )
-            .setTimestamp();
+          if (channel) {
+            const embed = new EmbedBuilder()
+              .setTitle("📦 New Withdrawal Request")
+              .addFields(
+                {
+                  name: "👤 Player",
+                  value: `<@${discordId}>`,
+                  inline: true
+                },
+                {
+                  name: "📦 Resource",
+                  value: resource.toUpperCase(),
+                  inline: true
+                },
+                {
+                  name: "🔢 Amount",
+                  value: amount.toLocaleString(),
+                  inline: true
+                },
+                {
+                  name: "🪙 Coin Cost",
+                  value: coinCost.toLocaleString(),
+                  inline: true
+                },
+                {
+                  name: "🆔 Request ID",
+                  value: `#${requestId}`,
+                  inline: true
+                },
+                {
+                  name: "📌 Status",
+                  value: "PENDING",
+                  inline: true
+                }
+              )
+              .setTimestamp();
 
-          await channel.send({
-            embeds: [embed]
-          });
+            await channel.send({
+              embeds: [embed]
+            });
+          }
+        } catch (channelError) {
+          console.error(
+            "❌ Admin channel error:",
+            channelError
+          );
         }
       }
 
-      // PUBLIC response — NOT ephemeral
       await interaction.reply({
         content:
           `📦 **Withdrawal Request Created**\n\n` +
