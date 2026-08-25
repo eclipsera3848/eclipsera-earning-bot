@@ -3,13 +3,11 @@ const {
   EmbedBuilder
 } = require("discord.js");
 
-const {
-  pool
-} = require("../database/database");
+const { pool } = require("../../database/database");
 
 module.exports = {
   data: new SlashCommandBuilder()
-    .setName("coin-leaderboard")
+    .setName("leaderboard")
     .setDescription("Show the top coin earners"),
 
   async execute(interaction) {
@@ -61,7 +59,7 @@ module.exports = {
     } catch (error) {
       console.error("❌ Leaderboard error:", error);
 
-      if (!interaction.replied) {
+      if (!interaction.replied && !interaction.deferred) {
         await interaction.reply({
           content: "❌ Could not load the leaderboard.",
           ephemeral: true
