@@ -4,10 +4,12 @@ const { REST, Routes } = require("discord.js");
 
 const balanceCommand = require("./commands/balance");
 const withdrawCommand = require("./commands/withdraw");
+const approveCommand = require("./commands/approve");
 
 const commands = [
   balanceCommand.data.toJSON(),
-  withdrawCommand.data.toJSON()
+  withdrawCommand.data.toJSON(),
+  approveCommand.data.toJSON()
 ];
 
 const rest = new REST({ version: "10" }).setToken(
@@ -28,8 +30,10 @@ async function deployCommands() {
       }
     );
 
-    console.log("✅ /balance registered successfully!");
-    console.log("✅ /withdraw registered successfully!");
+    console.log("✅ Commands registered successfully!");
+    console.log("• /balance");
+    console.log("• /withdraw");
+    console.log("• /approve");
   } catch (error) {
     console.error("❌ Command registration failed:");
     console.error(error);
