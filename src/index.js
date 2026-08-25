@@ -3,7 +3,6 @@ require("dotenv").config();
 const {
   Client,
   GatewayIntentBits,
-  Partials,
   Collection
 } = require("discord.js");
 
@@ -13,26 +12,20 @@ const {
 } = require("./database/database");
 
 const balanceCommand = require("./commands/balance");
-const withdrawCommand = require("./withdraw");
-const leaderboardCommand = require("./leaderboard");
-const approveCommand = require("./approve");
-const rejectCommand = require("./reject");
+const withdrawCommand = require("./commands/withdraw");
+const leaderboardCommand = require("./commands/leaderboard");
 
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
-    GatewayIntentBits.DirectMessages
-  ],
-
-  partials: [
-    Partials.Channel
+    GatewayIntentBits.MessageContent
   ]
 });
 
 client.commands = new Collection();
 
+// Register commands
 client.commands.set(
   balanceCommand.data.name,
   balanceCommand
@@ -48,23 +41,15 @@ client.commands.set(
   leaderboardCommand
 );
 
-client.commands.set(
-  approveCommand.data.name,
-  approveCommand
-);
-
-client.commands.set(
-  rejectCommand.data.name,
-  rejectCommand
-);
-
+// Bot ready
 client.once("ready", async () => {
+  console.log("=================================");
   console.log("✅ Eclipsera Earning Bot is online!");
   console.log(`🤖 Logged in as ${client.user.tag}`);
+  console.log("=================================");
 
   try {
     await initDatabase();
-
     console.log("✅ Database connected successfully!");
   } catch (error) {
     console.error("❌ Database connection failed:");
@@ -72,6 +57,7 @@ client.once("ready", async () => {
   }
 });
 
+// Give 1 coin for every message
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
   if (!message.guild) return;
@@ -83,11 +69,11 @@ client.on("messageCreate", async (message) => {
       `💰 +1 coin → ${message.author.tag}`
     );
   } catch (error) {
-    console.error("❌ Coin error:");
-    console.error(error);
+    console.error("❌ Coin error:", error);
   }
 });
 
+// Slash commands
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
@@ -99,10 +85,8 @@ client.on("interactionCreate", async (interaction) => {
 
   try {
     await command.execute(interaction);
-
   } catch (error) {
-    console.error("❌ Command error:");
-    console.error(error);
+    console.error("❌ Command error:", error);
 
     try {
       if (interaction.replied || interaction.deferred) {
@@ -117,9 +101,17 @@ client.on("interactionCreate", async (interaction) => {
         });
       }
     } catch (replyError) {
-      console.error("❌ Could not reply:", replyError);
+      console.error(
+        "❌ Could not send error reply:",
+        replyError
+      );
     }
   }
 });
+
+if (!process.env.DISCORD_TOKEN) {
+  console.error("❌ DISCORD_TOKEN is missing!");
+  process.exit(1);
+}
 
 client.login(process.env.DISCORD_TOKEN);
