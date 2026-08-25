@@ -10,7 +10,7 @@ const {
 const {
   initDatabase,
   addCoin
-} = require("../database/database");
+} = require("./database/database");
 
 const balanceCommand = require("./commands/balance");
 const withdrawCommand = require("./commands/withdraw");
@@ -31,21 +31,25 @@ const client = new Client({
 
 client.commands = new Collection();
 
+// Balance
 client.commands.set(
   balanceCommand.data.name,
   balanceCommand
 );
 
+// Withdraw
 client.commands.set(
   withdrawCommand.data.name,
   withdrawCommand
 );
 
+// Leaderboard
 client.commands.set(
   leaderboardCommand.data.name,
   leaderboardCommand
 );
 
+// Bot ready
 client.once("ready", async () => {
   console.log("✅ Eclipsera Earning Bot is online!");
   console.log(`🤖 Logged in as ${client.user.tag}`);
@@ -59,6 +63,7 @@ client.once("ready", async () => {
   }
 });
 
+// Give 1 coin per message
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
   if (!message.guild) return;
@@ -75,6 +80,7 @@ client.on("messageCreate", async (message) => {
   }
 });
 
+// Slash commands
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
@@ -89,16 +95,20 @@ client.on("interactionCreate", async (interaction) => {
   } catch (error) {
     console.error("❌ Command error:", error);
 
-    if (interaction.replied || interaction.deferred) {
-      await interaction.followUp({
-        content: "❌ Something went wrong.",
-        ephemeral: true
-      });
-    } else {
-      await interaction.reply({
-        content: "❌ Something went wrong.",
-        ephemeral: true
-      });
+    try {
+      if (interaction.replied || interaction.deferred) {
+        await interaction.followUp({
+          content: "❌ Something went wrong.",
+          ephemeral: true
+        });
+      } else {
+        await interaction.reply({
+          content: "❌ Something went wrong.",
+          ephemeral: true
+        });
+      }
+    } catch (replyError) {
+      console.error("❌ Reply error:", replyError);
     }
   }
 });
