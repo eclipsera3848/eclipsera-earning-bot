@@ -1,78 +1,39 @@
-const fs = require("fs");
-const path = require("path");
-const { REST, Routes } = require("discord.js");
+require("dotenv").config();
 
-const token = process.env.DISCORD_TOKEN;
-const clientId = process.env.CLIENT_ID;
-const guildId = process.env.GUILD_ID;
+const {
+  REST,
+  Routes
+} = require("discord.js");
 
-if (!token || !clientId || !guildId) {
-  console.error("❌ Missing DISCORD_TOKEN, CLIENT_ID or GUILD_ID");
-  process.exit(1);
-}
+const balanceCommand = require("./commands/balance");
+const withdrawCommand = require("./commands/withdraw");
+const leaderboardCommand = require("./commands/leaderboard");
 
-const commands = [];
-const srcPath = __dirname;
-
-// Load command files from src/commands
-const commandsFolder = path.join(srcPath, "commands");
-
-if (fs.existsSync(commandsFolder)) {
-  const files = fs
-    .readdirSync(commandsFolder)
-    .filter(file => file.endsWith(".js"));
-
-  for (const file of files) {
-    try {
-      const command = require(path.join(commandsFolder, file));
-
-      if (command?.data?.toJSON) {
-        commands.push(command.data.toJSON());
-        console.log(`✅ Loaded: ${command.data.name}`);
-      }
-    } catch (error) {
-      console.error(`❌ Error loading ${file}:`, error.message);
-    }
-  }
-}
-
-// Load command files directly inside src
-const rootFiles = [
-  "withdraw.js",
-  "approve.js",
-  "reject.js",
-  "leaderboard.js"
+const commands = [
+  balanceCommand.data.toJSON(),
+  withdrawCommand.data.toJSON(),
+  leaderboardCommand.data.toJSON()
 ];
 
-for (const file of rootFiles) {
-  const filePath = path.join(srcPath, file);
-
-  if (fs.existsSync(filePath)) {
-    try {
-      const command = require(filePath);
-
-      if (command?.data?.toJSON) {
-        commands.push(command.data.toJSON());
-        console.log(`✅ Loaded: ${command.data.name}`);
-      }
-    } catch (error) {
-      console.error(`❌ Error loading ${file}:`, error.message);
-    }
-  }
-}
+const rest = new REST({
+  version: "10"
+}).setToken(process.env.DISCORD_TOKEN);
 
 async function deployCommands() {
   try {
-    console.log(`📦 Registering ${commands.length} commands...`);
-
-    const rest = new REST({ version: "10" }).setToken(token);
+    console.log("🔄 Registering slash commands...");
 
     await rest.put(
-      Routes.applicationGuildCommands(clientId, guildId),
-      { body: commands }
+      Routes.applicationGuildCommands(
+        process.env.CLIENT_ID,
+        process.env.GUILD_ID
+      ),
+      {
+        body: commands
+      }
     );
 
-    console.log("✅ All slash commands registered successfully!");
+    console.log("✅ Slash commands registered successfully!");
   } catch (error) {
     console.error("❌ Failed to register commands:");
     console.error(error);
