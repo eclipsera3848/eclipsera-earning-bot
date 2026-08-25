@@ -6,12 +6,14 @@ const balanceCommand = require("./commands/balance");
 const withdrawCommand = require("./commands/withdraw");
 const approveCommand = require("./commands/approve");
 const rejectCommand = require("./commands/reject");
+const leaderboardCommand = require("./commands/leaderboard");
 
 const commands = [
   balanceCommand.data.toJSON(),
   withdrawCommand.data.toJSON(),
   approveCommand.data.toJSON(),
-  rejectCommand.data.toJSON()
+  rejectCommand.data.toJSON(),
+  leaderboardCommand.data.toJSON()
 ];
 
 const rest = new REST({ version: "10" }).setToken(
@@ -32,7 +34,7 @@ async function deployCommands() {
       }
     );
 
-    console.log("✅ Commands registered successfully!");
+    console.log("✅ All commands registered!");
   } catch (error) {
     console.error("❌ Command registration failed:");
     console.error(error);
