@@ -1,0 +1,18 @@
+{
+  "name": "eclipsera-earning-bot",
+  "version": "1.0.0",
+  "description": "Eclipsera Earning Bot - Discord coin and resource withdrawal system",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node src/index.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.24.2",
+    "dotenv": "^17.2.2",
+    "pg": "^8.16.3"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
