@@ -1,176 +1,308 @@
 const {
-  SlashCommandBuilder,
   EmbedBuilder
 } = require("discord.js");
 
 const {
   pool
-} = require("./database/database");
-
-const ADMIN_CHANNEL_ID = process.env.ADMIN_CHANNEL_ID;
+} = require("../database/database");
 
 module.exports = {
-  data: new SlashCommandBuilder()
-    .setName("approve")
-    .setDescription("Approve a withdrawal request")
+  data: {
+    name: "approve"
+  },
 
-    .addIntegerOption(option =>
-      option
-        .setName("request_id")
-        .setDescription("Withdrawal request ID")
-        .setRequired(true)
-        .setMinValue(1)
-    ),
+  async handleButton(interaction) {
+    const customId =
+      interaction.customId;
 
-  async execute(interaction) {
-    if (
-      ADMIN_CHANNEL_ID &&
-      interaction.channelId !== ADMIN_CHANNEL_ID
-    ) {
-      return interaction.reply({
-        content:
-          "❌ This command can only be used in the admin channel.",
-        ephemeral: true
-      });
-    }
+    const parts =
+      customId.split("_");
 
-    const requestId =
-      interaction.options.getInteger("request_id");
-
-    const client = await pool.connect();
+    const action = parts[1];
+    const requestId = parts[2];
 
     try {
-      await client.query("BEGIN");
+      const result =
+        await pool.query(
+          `
+          SELECT *
+          FROM requests
+          WHERE id = $1
+          `,
+          [requestId]
+        );
 
-      const requestResult = await client.query(
-        `
-        SELECT *
-        FROM requests
-        WHERE id = $1
-        FOR UPDATE
-        `,
-        [requestId]
-      );
-
-      if (requestResult.rows.length === 0) {
-        await client.query("ROLLBACK");
-
-        return interaction.reply({
-          content: `❌ Request #${requestId} was not found.`
-        });
-      }
-
-      const request = requestResult.rows[0];
-
-      if (request.status !== "PENDING") {
-        await client.query("ROLLBACK");
-
+      if (result.rows.length === 0) {
         return interaction.reply({
           content:
-            `❌ Request #${requestId} is already **${request.status}**.`
+            "❌ Request not found.",
+          ephemeral: true
         });
       }
 
-      await client.query(
-        `
-        UPDATE users
-        SET reserved_coins =
-          GREATEST(reserved_coins - $1, 0),
+      const request =
+        result.rows[0];
+
+      if (request.status !== "PENDING") {
+        return interaction.reply({
+          content:
+            `❌ This request is already **${request.status}**.`,
+          ephemeral: true
+        });
+      }
+
+      // APPROVE
+      if (action === "approve") {
+        await pool.query(
+          `
+          UPDATE users
+          SET
+            reserved_coins =
+              reserved_coins - $1,
             total_spent =
-          total_spent + $1
-        WHERE discord_id = $2
-        `,
-        [
-          request.coin_cost,
-          request.discord_id
-        ]
-      );
+              total_spent + $1
+          WHERE discord_id = $2
+          `,
+          [
+            request.coin_cost,
+            request.discord_id
+          ]
+        );
 
-      await client.query(
-        `
-        UPDATE requests
-        SET
-          status = 'APPROVED',
-          approved_at = CURRENT_TIMESTAMP,
-          approved_by = $1
-        WHERE id = $2
-        `,
-        [
-          interaction.user.id,
-          requestId
-        ]
-      );
+        await pool.query(
+          `
+          UPDATE requests
+          SET
+            status = 'APPROVED',
+            approved_at = CURRENT_TIMESTAMP,
+            approved_by = $1
+          WHERE id = $2
+          `,
+          [
+            interaction.user.id,
+            requestId
+          ]
+        );
 
-      await client.query(
-        `
-        INSERT INTO transactions
-          (discord_id, type, amount, reason, request_id)
-        VALUES
-          ($1, 'WITHDRAW_APPROVED', $2, $3, $4)
-        `,
-        [
-          request.discord_id,
-          request.coin_cost,
-          `Withdrawal approved: ${request.resource}`,
-          requestId
-        ]
-      );
+        await pool.query(
+          `
+          INSERT INTO transactions
+            (
+              discord_id,
+              type,
+              amount,
+              reason,
+              request_id
+            )
+          VALUES
+            (
+              $1,
+              'WITHDRAW_APPROVED',
+              $2,
+              $3,
+              $4
+            )
+          `,
+          [
+            request.discord_id,
+            request.coin_cost,
+            `Withdrawal approved for ${request.resource}`,
+            requestId
+          ]
+        );
 
-      await client.query("COMMIT");
+        const embed =
+          new EmbedBuilder()
+            .setTitle(
+              "✅ Withdrawal Approved"
+            )
+            .setColor(0x2ecc71)
+            .addFields(
+              {
+                name: "👤 Discord User",
+                value:
+                  `<@${request.discord_id}>`,
+                inline: true
+              },
+              {
+                name: "🎮 In-Game Nickname",
+                value:
+                  request.nickname || "Not provided",
+                inline: true
+              },
+              {
+                name: "📦 Resource",
+                value:
+                  request.resource.toUpperCase(),
+                inline: true
+              },
+              {
+                name: "🔢 Amount",
+                value:
+                  Number(request.amount).toLocaleString(),
+                inline: true
+              },
+              {
+                name: "🪙 Coins",
+                value:
+                  Number(request.coin_cost).toLocaleString(),
+                inline: true
+              },
+              {
+                name: "🆔 Request ID",
+                value:
+                  `#${requestId}`,
+                inline: true
+              },
+              {
+                name: "👮 Approved By",
+                value:
+                  `<@${interaction.user.id}>`,
+                inline: true
+              }
+            )
+            .setTimestamp();
 
-      const embed = new EmbedBuilder()
-        .setTitle("✅ Withdrawal Approved")
-        .addFields(
-          {
-            name: "🆔 Request",
-            value: `#${requestId}`,
-            inline: true
-          },
-          {
-            name: "👤 Player",
-            value: `<@${request.discord_id}>`,
-            inline: true
-          },
-          {
-            name: "📦 Resource",
-            value: request.resource.toUpperCase(),
-            inline: true
-          },
-          {
-            name: "🔢 Amount",
-            value: Number(request.amount).toLocaleString(),
-            inline: true
-          },
-          {
-            name: "🪙 Coins",
-            value: Number(request.coin_cost).toLocaleString(),
-            inline: true
-          },
-          {
-            name: "👮 Approved By",
-            value: `<@${interaction.user.id}>`,
-            inline: true
-          }
-        )
-        .setTimestamp();
+        await interaction.update({
+          embeds: [embed],
+          components: []
+        });
 
-      await interaction.reply({
-        embeds: [embed]
-      });
+        return;
+      }
+
+      // REJECT
+      if (action === "reject") {
+        await pool.query(
+          `
+          UPDATE users
+          SET
+            coins = coins + $1,
+            reserved_coins =
+              reserved_coins - $1
+          WHERE discord_id = $2
+          `,
+          [
+            request.coin_cost,
+            request.discord_id
+          ]
+        );
+
+        await pool.query(
+          `
+          UPDATE requests
+          SET
+            status = 'REJECTED',
+            approved_at = CURRENT_TIMESTAMP,
+            approved_by = $1
+          WHERE id = $2
+          `,
+          [
+            interaction.user.id,
+            requestId
+          ]
+        );
+
+        await pool.query(
+          `
+          INSERT INTO transactions
+            (
+              discord_id,
+              type,
+              amount,
+              reason,
+              request_id
+            )
+          VALUES
+            (
+              $1,
+              'WITHDRAW_REFUND',
+              $2,
+              $3,
+              $4
+            )
+          `,
+          [
+            request.discord_id,
+            request.coin_cost,
+            `Withdrawal rejected - coins refunded`,
+            requestId
+          ]
+        );
+
+        const embed =
+          new EmbedBuilder()
+            .setTitle(
+              "❌ Withdrawal Rejected"
+            )
+            .setColor(0xe74c3c)
+            .addFields(
+              {
+                name: "👤 Discord User",
+                value:
+                  `<@${request.discord_id}>`,
+                inline: true
+              },
+              {
+                name: "🎮 In-Game Nickname",
+                value:
+                  request.nickname || "Not provided",
+                inline: true
+              },
+              {
+                name: "📦 Resource",
+                value:
+                  request.resource.toUpperCase(),
+                inline: true
+              },
+              {
+                name: "🔢 Amount",
+                value:
+                  Number(request.amount).toLocaleString(),
+                inline: true
+              },
+              {
+                name: "🪙 Coins Refunded",
+                value:
+                  Number(request.coin_cost).toLocaleString(),
+                inline: true
+              },
+              {
+                name: "🆔 Request ID",
+                value:
+                  `#${requestId}`,
+                inline: true
+              },
+              {
+                name: "👮 Rejected By",
+                value:
+                  `<@${interaction.user.id}>`,
+                inline: true
+              }
+            )
+            .setTimestamp();
+
+        await interaction.update({
+          embeds: [embed],
+          components: []
+        });
+
+        return;
+      }
 
     } catch (error) {
-      await client.query("ROLLBACK");
-
-      console.error("❌ Approve error:", error);
+      console.error(
+        "❌ Approval error:",
+        error
+      );
 
       if (!interaction.replied) {
         await interaction.reply({
-          content: "❌ Could not approve the request."
+          content:
+            "❌ Something went wrong.",
+          ephemeral: true
         });
       }
-
-    } finally {
-      client.release();
     }
   }
 };
