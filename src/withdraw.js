@@ -7,9 +7,9 @@ const {
   getUser,
   createUser,
   pool
-} = require("../database/database");
+} = require("./database/database");
 
-// 50,000 coins = given resources
+// 50,000 coins = resources
 const RATES = {
   bread: 10000,
   wood: 5000,
@@ -21,7 +21,6 @@ const RATES = {
 const MIN_AMOUNT = 100;
 const MAX_AMOUNT = 1000;
 
-// Admin channel ID will be added in Railway Variables later
 const ADMIN_CHANNEL_ID = process.env.ADMIN_CHANNEL_ID;
 
 module.exports = {
@@ -58,20 +57,24 @@ module.exports = {
     const amount = interaction.options.getInteger("amount");
 
     try {
-      // Make sure user exists
       await createUser(discordId);
 
       const user = await getUser(discordId);
 
-      // Calculate coin cost
+      if (!user) {
+        return interaction.reply({
+          content: "❌ User account not found.",
+          ephemeral: true
+        });
+      }
+
       const resourcesPer50000 = RATES[resource];
 
       const coinCost = Math.ceil(
         (amount * 50000) / resourcesPer50000
       );
 
-      // Check balance
-      const currentCoins = Number(user.coins);
+      const currentCoins = Number(user.coins || 0);
 
       if (currentCoins < coinCost) {
         return interaction.reply({
@@ -82,7 +85,7 @@ module.exports = {
         });
       }
 
-      // Check today's approved/pending withdrawal amount
+      // Daily limit
       const dailyResult = await pool.query(
         `
         SELECT COALESCE(SUM(amount), 0) AS total
@@ -95,7 +98,9 @@ module.exports = {
         [discordId, resource]
       );
 
-      const todayAmount = Number(dailyResult.rows[0].total);
+      const todayAmount = Number(
+        dailyResult.rows[0]?.total || 0
+      );
 
       if (todayAmount + amount > MAX_AMOUNT) {
         const remaining = Math.max(
@@ -111,12 +116,12 @@ module.exports = {
         });
       }
 
-      // Reserve coins atomically
+      // Reserve coins
       const updateResult = await pool.query(
         `
         UPDATE users
         SET coins = coins - $1,
-            reserved_coins = reserved_coins + $1
+            reserved_coins = COALESCE(reserved_coins, 0) + $1
         WHERE discord_id = $2
           AND coins >= $1
         RETURNING coins
@@ -126,12 +131,13 @@ module.exports = {
 
       if (updateResult.rowCount === 0) {
         return interaction.reply({
-          content: "❌ Your coin balance changed. Please try again.",
+          content:
+            "❌ Your coin balance changed. Please try again.",
           ephemeral: true
         });
       }
 
-      // Create withdrawal request
+      // Create request
       const requestResult = await pool.query(
         `
         INSERT INTO requests
@@ -140,12 +146,17 @@ module.exports = {
           ($1, $2, $3, $4, 'PENDING')
         RETURNING id
         `,
-        [discordId, resource, amount, coinCost]
+        [
+          discordId,
+          resource,
+          amount,
+          coinCost
+        ]
       );
 
       const requestId = requestResult.rows[0].id;
 
-      // Transaction record
+      // Transaction
       await pool.query(
         `
         INSERT INTO transactions
@@ -161,74 +172,90 @@ module.exports = {
         ]
       );
 
-      // Send request to admin channel
+      // Admin channel
       if (ADMIN_CHANNEL_ID) {
-        const channel =
-          await interaction.client.channels.fetch(
-            ADMIN_CHANNEL_ID
+        try {
+          const channel =
+            await interaction.client.channels.fetch(
+              ADMIN_CHANNEL_ID
+            );
+
+          if (channel) {
+            const embed = new EmbedBuilder()
+              .setTitle("📦 New Withdrawal Request")
+              .addFields(
+                {
+                  name: "👤 Player",
+                  value: `<@${discordId}>`,
+                  inline: true
+                },
+                {
+                  name: "📦 Resource",
+                  value: resource.toUpperCase(),
+                  inline: true
+                },
+                {
+                  name: "🔢 Amount",
+                  value: amount.toLocaleString(),
+                  inline: true
+                },
+                {
+                  name: "🪙 Coin Cost",
+                  value: coinCost.toLocaleString(),
+                  inline: true
+                },
+                {
+                  name: "🆔 Request ID",
+                  value: `#${requestId}`,
+                  inline: true
+                },
+                {
+                  name: "📌 Status",
+                  value: "PENDING",
+                  inline: true
+                }
+              )
+              .setTimestamp();
+
+            await channel.send({
+              embeds: [embed]
+            });
+          }
+        } catch (channelError) {
+          console.error(
+            "❌ Admin channel error:",
+            channelError
           );
-
-        if (channel) {
-          const embed = new EmbedBuilder()
-            .setTitle("📦 New Withdrawal Request")
-            .addFields(
-              {
-                name: "👤 Player",
-                value: `<@${discordId}>`,
-                inline: true
-              },
-              {
-                name: "📦 Resource",
-                value: resource.toUpperCase(),
-                inline: true
-              },
-              {
-                name: "🔢 Amount",
-                value: amount.toLocaleString(),
-                inline: true
-              },
-              {
-                name: "🪙 Coin Cost",
-                value: coinCost.toLocaleString(),
-                inline: true
-              },
-              {
-                name: "🆔 Request ID",
-                value: `#${requestId}`,
-                inline: true
-              },
-              {
-                name: "📌 Status",
-                value: "PENDING",
-                inline: true
-              }
-            )
-            .setTimestamp();
-
-          await channel.send({
-            embeds: [embed]
-          });
         }
       }
 
       await interaction.reply({
         content:
-          `✅ Withdrawal request created!\n\n` +
-          `📦 **${resource.toUpperCase()}**: ${amount.toLocaleString()}\n` +
-          `🪙 **Coins reserved**: ${coinCost.toLocaleString()}\n` +
-          `🆔 **Request ID**: #${requestId}\n\n` +
-          `⏳ Your request is waiting for admin approval.`,
+          `✅ **Withdrawal request created!**\n\n` +
+          `📦 Resource: **${resource.toUpperCase()}**\n` +
+          `🔢 Amount: **${amount.toLocaleString()}**\n` +
+          `🪙 Coins reserved: **${coinCost.toLocaleString()}**\n` +
+          `🆔 Request ID: **#${requestId}**\n\n` +
+          `⏳ Waiting for admin approval.`,
         ephemeral: true
       });
 
     } catch (error) {
       console.error("❌ Withdrawal error:", error);
 
-      await interaction.reply({
-        content:
-          "❌ Something went wrong while creating your withdrawal request.",
-        ephemeral: true
-      });
+      if (interaction.replied || interaction.deferred) {
+        await interaction.followUp({
+          content:
+            "❌ Something went wrong while creating your withdrawal request.",
+          ephemeral: true
+        });
+      } else {
+        await interaction.reply({
+          content:
+            "❌ Something went wrong while creating your withdrawal request.",
+          ephemeral: true
+        });
+      }
     }
   }
 };
