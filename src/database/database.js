@@ -24,6 +24,7 @@ async function initDatabase() {
       discord_id VARCHAR(30) NOT NULL,
       resource VARCHAR(20) NOT NULL,
       amount INTEGER NOT NULL,
+      nickname VARCHAR(100) NOT NULL,
       coin_cost BIGINT NOT NULL,
       status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -42,14 +43,22 @@ async function initDatabase() {
     );
   `);
 
-  console.log("✅ Database initialized successfully.");
+  // Add nickname column if the requests table already existed
+  await pool.query(`
+    ALTER TABLE requests
+    ADD COLUMN IF NOT EXISTS nickname VARCHAR(100)
+  `);
+
+  console.log("Database initialized successfully.");
 }
 
 async function createUser(discordId) {
   await pool.query(
-    `INSERT INTO users (discord_id)
-     VALUES ($1)
-     ON CONFLICT (discord_id) DO NOTHING`,
+    `
+    INSERT INTO users (discord_id)
+    VALUES ($1)
+    ON CONFLICT (discord_id) DO NOTHING
+    `,
     [discordId]
   );
 }
@@ -58,7 +67,11 @@ async function getUser(discordId) {
   await createUser(discordId);
 
   const result = await pool.query(
-    `SELECT * FROM users WHERE discord_id = $1`,
+    `
+    SELECT *
+    FROM users
+    WHERE discord_id = $1
+    `,
     [discordId]
   );
 
@@ -69,18 +82,24 @@ async function addCoin(discordId) {
   await createUser(discordId);
 
   await pool.query(
-    `UPDATE users
-     SET coins = coins + 1,
-         total_earned = total_earned + 1,
-         message_count = message_count + 1
-     WHERE discord_id = $1`,
+    `
+    UPDATE users
+    SET
+      coins = coins + 1,
+      total_earned = total_earned + 1,
+      message_count = message_count + 1
+    WHERE discord_id = $1
+    `,
     [discordId]
   );
 
   await pool.query(
-    `INSERT INTO transactions
-     (discord_id, type, amount, reason)
-     VALUES ($1, 'EARN', 1, 'Discord message')`,
+    `
+    INSERT INTO transactions
+      (discord_id, type, amount, reason)
+    VALUES
+      ($1, 'EARN', 1, 'Discord message')
+    `,
     [discordId]
   );
 }
