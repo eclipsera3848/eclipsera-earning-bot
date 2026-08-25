@@ -1,346 +1,250 @@
 const {
   SlashCommandBuilder,
-  EmbedBuilder
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
+  ActionRowBuilder,
+  EmbedBuilder,
+  ButtonBuilder,
+  ButtonStyle
 } = require("discord.js");
 
-const {
-  getUser,
-  createUser,
-  pool
-} = require("../database/database");
-
-const RATES = {
-  bread: 10000,
-  wood: 5000,
-  stone: 2500,
-  water: 1500,
-  iron: 1000
-};
-
-const MIN_AMOUNT = 100;
-const MAX_AMOUNT = 1000;
-
-const ADMIN_CHANNEL_ID = process.env.ADMIN_CHANNEL_ID;
+const { pool } = require("../database/database");
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName("withdraw")
-    .setDescription("Request resources using your coins")
-
-    .addStringOption(option =>
-      option
-        .setName("resource")
-        .setDescription("Choose a resource")
-        .setRequired(true)
-        .addChoices(
-          {
-            name: "🥖 Bread",
-            value: "bread"
-          },
-          {
-            name: "🪵 Wood",
-            value: "wood"
-          },
-          {
-            name: "🪨 Stone",
-            value: "stone"
-          },
-          {
-            name: "💧 Water",
-            value: "water"
-          },
-          {
-            name: "⛓️ Iron",
-            value: "iron"
-          }
-        )
-    )
-
+    .setDescription("Create a withdrawal request")
     .addIntegerOption(option =>
       option
         .setName("amount")
-        .setDescription("Amount to withdraw (100-1000)")
+        .setDescription("Amount of coins to withdraw")
         .setRequired(true)
-        .setMinValue(MIN_AMOUNT)
-        .setMaxValue(MAX_AMOUNT)
-    )
-
-    .addStringOption(option =>
-      option
-        .setName("nickname")
-        .setDescription("Your in-game nickname")
-        .setRequired(true)
-        .setMaxLength(100)
+        .setMinValue(1)
     ),
 
   async execute(interaction) {
-    const discordId = interaction.user.id;
+    const amount = interaction.options.getInteger("amount");
 
-    const resource =
-      interaction.options.getString("resource");
+    const modal = new ModalBuilder()
+      .setCustomId(`withdraw_modal_${amount}`)
+      .setTitle("Withdrawal Request");
 
-    const amount =
-      interaction.options.getInteger("amount");
+    const nicknameInput = new TextInputBuilder()
+      .setCustomId("nickname")
+      .setLabel("In-Game Nickname")
+      .setPlaceholder("Enter your in-game nickname")
+      .setStyle(TextInputStyle.Short)
+      .setRequired(true)
+      .setMaxLength(100);
 
-    const nickname =
-      interaction.options.getString("nickname").trim();
+    const row = new ActionRowBuilder().addComponents(nicknameInput);
+
+    modal.addComponents(row);
+
+    await interaction.showModal(modal);
+  },
+
+  async handleModal(interaction) {
+    if (!interaction.customId.startsWith("withdraw_modal_")) {
+      return false;
+    }
+
+    const amount = Number(
+      interaction.customId.replace("withdraw_modal_", "")
+    );
+
+    const nickname = interaction.fields
+      .getTextInputValue("nickname")
+      .trim();
 
     if (!nickname) {
-      return interaction.reply({
+      await interaction.reply({
         content: "❌ Please enter your in-game nickname.",
         ephemeral: true
       });
+
+      return true;
     }
 
+    const discordId = interaction.user.id;
+
+    const client = await pool.connect();
+
     try {
-      await createUser(discordId);
+      await client.query("BEGIN");
 
-      const user = await getUser(discordId);
-
-      const resourcesPer50000 =
-        RATES[resource];
-
-      const coinCost = Math.ceil(
-        (amount * 50000) /
-        resourcesPer50000
-      );
-
-      const currentCoins =
-        Number(user.coins);
-
-      if (currentCoins < coinCost) {
-        return interaction.reply({
-          content:
-            `❌ You need **${coinCost.toLocaleString()} coins**, ` +
-            `but you only have **${currentCoins.toLocaleString()} coins**.`,
-          ephemeral: true
-        });
-      }
-
-      // Check daily limit
-      const dailyResult = await pool.query(
+      const userResult = await client.query(
         `
-        SELECT COALESCE(SUM(amount), 0) AS total
-        FROM requests
+        SELECT coins, reserved_coins
+        FROM users
         WHERE discord_id = $1
-          AND resource = $2
-          AND status IN ('PENDING', 'APPROVED')
-          AND created_at >= CURRENT_DATE
+        FOR UPDATE
         `,
-        [discordId, resource]
+        [discordId]
       );
 
-      const todayAmount =
-        Number(dailyResult.rows[0].total);
+      if (userResult.rows.length === 0) {
+        await client.query(
+          `
+          INSERT INTO users (discord_id)
+          VALUES ($1)
+          ON CONFLICT (discord_id) DO NOTHING
+          `,
+          [discordId]
+        );
 
-      if (todayAmount + amount > MAX_AMOUNT) {
-        const remaining =
-          Math.max(
-            0,
-            MAX_AMOUNT - todayAmount
-          );
+        await client.query("ROLLBACK");
 
-        return interaction.reply({
-          content:
-            `❌ Daily limit reached for **${resource}**.\n` +
-            `Remaining today: **${remaining}**`,
+        await interaction.reply({
+          content: "❌ Your account was not found. Please try again.",
           ephemeral: true
         });
+
+        return true;
       }
 
-      // Reserve coins
-      const updateResult = await pool.query(
+      const user = userResult.rows[0];
+      const coins = Number(user.coins);
+
+      if (coins < amount) {
+        await client.query("ROLLBACK");
+
+        await interaction.reply({
+          content:
+            `❌ You don't have enough coins.\n` +
+            `Your balance: **${coins.toLocaleString()}**\n` +
+            `Requested: **${amount.toLocaleString()}**`,
+          ephemeral: true
+        });
+
+        return true;
+      }
+
+      const requestResult = await client.query(
+        `
+        INSERT INTO requests
+          (discord_id, resource, amount, coin_cost, status)
+        VALUES
+          ($1, $2, $3, $4, 'PENDING')
+        RETURNING id
+        `,
+        [
+          discordId,
+          nickname,
+          amount,
+          amount
+        ]
+      );
+
+      const requestId = requestResult.rows[0].id;
+
+      await client.query(
         `
         UPDATE users
         SET
           coins = coins - $1,
           reserved_coins = reserved_coins + $1
         WHERE discord_id = $2
-          AND coins >= $1
-        RETURNING coins
         `,
-        [
-          coinCost,
-          discordId
-        ]
+        [amount, discordId]
       );
 
-      if (updateResult.rowCount === 0) {
-        return interaction.reply({
-          content:
-            "❌ Your coin balance changed. Please try again.",
-          ephemeral: true
-        });
-      }
-
-      // Create request
-      const requestResult =
-        await pool.query(
-          `
-          INSERT INTO requests
-            (
-              discord_id,
-              resource,
-              amount,
-              coin_cost,
-              nickname,
-              status
-            )
-          VALUES
-            ($1, $2, $3, $4, $5, 'PENDING')
-          RETURNING id
-          `,
-          [
-            discordId,
-            resource,
-            amount,
-            coinCost,
-            nickname
-          ]
-        );
-
-      const requestId =
-        requestResult.rows[0].id;
-
-      // Transaction
-      await pool.query(
+      await client.query(
         `
         INSERT INTO transactions
-          (
-            discord_id,
-            type,
-            amount,
-            reason,
-            request_id
-          )
+          (discord_id, type, amount, reason, request_id)
         VALUES
-          (
-            $1,
-            'WITHDRAW_RESERVE',
-            $2,
-            $3,
-            $4
-          )
+          ($1, 'WITHDRAW_RESERVE', $2, $3, $4)
         `,
         [
           discordId,
-          coinCost,
-          `${resource} withdrawal request`,
+          amount,
+          `Withdrawal request for ${nickname}`,
           requestId
         ]
       );
 
-      // Send public admin request
-      if (ADMIN_CHANNEL_ID) {
-        try {
-          const channel =
-            await interaction.client.channels.fetch(
-              ADMIN_CHANNEL_ID
-            );
+      await client.query("COMMIT");
 
-          if (channel) {
-            const embed =
-              new EmbedBuilder()
-                .setTitle(
-                  "📦 New Withdrawal Request"
-                )
-                .setColor(0x3498db)
-                .addFields(
-                  {
-                    name: "👤 Discord User",
-                    value: `<@${discordId}>`,
-                    inline: true
-                  },
-                  {
-                    name: "🎮 In-Game Nickname",
-                    value: nickname,
-                    inline: true
-                  },
-                  {
-                    name: "📦 Resource",
-                    value: resource.toUpperCase(),
-                    inline: true
-                  },
-                  {
-                    name: "🔢 Amount",
-                    value: amount.toLocaleString(),
-                    inline: true
-                  },
-                  {
-                    name: "🪙 Coin Cost",
-                    value: coinCost.toLocaleString(),
-                    inline: true
-                  },
-                  {
-                    name: "🆔 Request ID",
-                    value: `#${requestId}`,
-                    inline: true
-                  },
-                  {
-                    name: "📌 Status",
-                    value: "PENDING",
-                    inline: true
-                  }
-                )
-                .setTimestamp();
-
-            await channel.send({
-              embeds: [embed],
-              components: [
-                {
-                  type: 1,
-                  components: [
-                    {
-                      type: 2,
-                      style: 3,
-                      label: "Approve",
-                      custom_id:
-                        `withdraw_approve_${requestId}`
-                    },
-                    {
-                      type: 2,
-                      style: 4,
-                      label: "Reject",
-                      custom_id:
-                        `withdraw_reject_${requestId}`
-                    }
-                  ]
-                }
-              ]
-            });
+      const embed = new EmbedBuilder()
+        .setTitle("💸 New Withdrawal Request")
+        .setColor(0x5865f2)
+        .addFields(
+          {
+            name: "👤 Discord User",
+            value: `<@${discordId}>`,
+            inline: true
+          },
+          {
+            name: "🎮 In-Game Nickname",
+            value: nickname,
+            inline: true
+          },
+          {
+            name: "🪙 Amount",
+            value: `${amount.toLocaleString()} coins`,
+            inline: true
+          },
+          {
+            name: "🆔 Request ID",
+            value: `#${requestId}`,
+            inline: true
+          },
+          {
+            name: "📌 Status",
+            value: "PENDING",
+            inline: true
           }
-        } catch (channelError) {
-          console.error(
-            "❌ Admin channel error:",
-            channelError
-          );
-        }
-      }
+        )
+        .setFooter({
+          text: "Withdrawal request"
+        })
+        .setTimestamp();
 
-      // PUBLIC reply
-      await interaction.reply({
-        content:
-          `✅ **Withdrawal Request Created**\n\n` +
-          `📦 Resource: **${resource.toUpperCase()}**\n` +
-          `🔢 Amount: **${amount.toLocaleString()}**\n` +
-          `🎮 In-Game Nickname: **${nickname}**\n` +
-          `🪙 Coins Reserved: **${coinCost.toLocaleString()}**\n` +
-          `🆔 Request ID: **#${requestId}**\n\n` +
-          `⏳ Waiting for admin approval.`
-      });
+      const approveButton = new ButtonBuilder()
+        .setCustomId(`withdraw_approve_${requestId}`)
+        .setLabel("Approve")
+        .setEmoji("✅")
+        .setStyle(ButtonStyle.Success);
 
-    } catch (error) {
-      console.error(
-        "❌ Withdrawal error:",
-        error
+      const rejectButton = new ButtonBuilder()
+        .setCustomId(`withdraw_reject_${requestId}`)
+        .setLabel("Reject")
+        .setEmoji("❌")
+        .setStyle(ButtonStyle.Danger);
+
+      const buttons = new ActionRowBuilder().addComponents(
+        approveButton,
+        rejectButton
       );
 
-      if (!interaction.replied) {
+      // IMPORTANT:
+      // This reply is NOT ephemeral.
+      // Everyone in the channel can see the request.
+      await interaction.reply({
+        embeds: [embed],
+        components: [buttons]
+      });
+
+      return true;
+    } catch (error) {
+      try {
+        await client.query("ROLLBACK");
+      } catch {}
+
+      console.error("❌ Withdrawal error:", error);
+
+      if (!interaction.replied && !interaction.deferred) {
         await interaction.reply({
-          content:
-            "❌ Something went wrong while creating your withdrawal request."
+          content: "❌ Could not create the withdrawal request.",
+          ephemeral: true
         });
       }
+
+      return true;
+    } finally {
+      client.release();
     }
   }
 };
