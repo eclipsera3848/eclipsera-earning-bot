@@ -3,9 +3,11 @@ require("dotenv").config();
 const { REST, Routes } = require("discord.js");
 
 const balanceCommand = require("./commands/balance");
+const withdrawCommand = require("./commands/withdraw");
 
 const commands = [
-  balanceCommand.data.toJSON()
+  balanceCommand.data.toJSON(),
+  withdrawCommand.data.toJSON()
 ];
 
 const rest = new REST({ version: "10" }).setToken(
@@ -27,6 +29,7 @@ async function deployCommands() {
     );
 
     console.log("✅ /balance registered successfully!");
+    console.log("✅ /withdraw registered successfully!");
   } catch (error) {
     console.error("❌ Command registration failed:");
     console.error(error);
