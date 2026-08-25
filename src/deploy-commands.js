@@ -1,42 +1,80 @@
-require("dotenv").config();
-
+const fs = require("fs");
+const path = require("path");
 const { REST, Routes } = require("discord.js");
 
-const balanceCommand = require("./commands/balance");
-const withdrawCommand = require("./commands/withdraw");
-const approveCommand = require("./commands/approve");
-const rejectCommand = require("./commands/reject");
-const leaderboardCommand = require("./commands/leaderboard");
+const token = process.env.DISCORD_TOKEN;
+const clientId = process.env.CLIENT_ID;
+const guildId = process.env.GUILD_ID;
 
-const commands = [
-  balanceCommand.data.toJSON(),
-  withdrawCommand.data.toJSON(),
-  approveCommand.data.toJSON(),
-  rejectCommand.data.toJSON(),
-  leaderboardCommand.data.toJSON()
+if (!token || !clientId || !guildId) {
+  console.error("❌ Missing DISCORD_TOKEN, CLIENT_ID or GUILD_ID");
+  process.exit(1);
+}
+
+const commands = [];
+const srcPath = __dirname;
+
+// Load command files from src/commands
+const commandsFolder = path.join(srcPath, "commands");
+
+if (fs.existsSync(commandsFolder)) {
+  const files = fs
+    .readdirSync(commandsFolder)
+    .filter(file => file.endsWith(".js"));
+
+  for (const file of files) {
+    try {
+      const command = require(path.join(commandsFolder, file));
+
+      if (command?.data?.toJSON) {
+        commands.push(command.data.toJSON());
+        console.log(`✅ Loaded: ${command.data.name}`);
+      }
+    } catch (error) {
+      console.error(`❌ Error loading ${file}:`, error.message);
+    }
+  }
+}
+
+// Load command files directly inside src
+const rootFiles = [
+  "withdraw.js",
+  "approve.js",
+  "reject.js",
+  "leaderboard.js"
 ];
 
-const rest = new REST({ version: "10" }).setToken(
-  process.env.DISCORD_TOKEN
-);
+for (const file of rootFiles) {
+  const filePath = path.join(srcPath, file);
+
+  if (fs.existsSync(filePath)) {
+    try {
+      const command = require(filePath);
+
+      if (command?.data?.toJSON) {
+        commands.push(command.data.toJSON());
+        console.log(`✅ Loaded: ${command.data.name}`);
+      }
+    } catch (error) {
+      console.error(`❌ Error loading ${file}:`, error.message);
+    }
+  }
+}
 
 async function deployCommands() {
   try {
-    console.log("🔄 Registering slash commands...");
+    console.log(`📦 Registering ${commands.length} commands...`);
+
+    const rest = new REST({ version: "10" }).setToken(token);
 
     await rest.put(
-      Routes.applicationGuildCommands(
-        process.env.CLIENT_ID,
-        process.env.GUILD_ID
-      ),
-      {
-        body: commands
-      }
+      Routes.applicationGuildCommands(clientId, guildId),
+      { body: commands }
     );
 
-    console.log("✅ All commands registered!");
+    console.log("✅ All slash commands registered successfully!");
   } catch (error) {
-    console.error("❌ Command registration failed:");
+    console.error("❌ Failed to register commands:");
     console.error(error);
   }
 }
