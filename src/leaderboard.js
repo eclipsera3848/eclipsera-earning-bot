@@ -20,41 +20,37 @@ module.exports = {
           coins,
           total_earned
         FROM users
-        ORDER BY coins DESC
+        ORDER BY total_earned DESC
         LIMIT 10
       `);
 
       if (result.rows.length === 0) {
         return interaction.reply({
-          content: "❌ Abhi leaderboard me koi user nahi hai.",
-          ephemeral: true
+          content: "📊 No users found yet."
         });
       }
 
       let description = "";
 
       result.rows.forEach((user, index) => {
-        let medal;
+        const position = index + 1;
 
-        if (index === 0) {
-          medal = "🥇";
-        } else if (index === 1) {
-          medal = "🥈";
-        } else if (index === 2) {
-          medal = "🥉";
-        } else {
-          medal = `**${index + 1}.**`;
-        }
+        let medal = `${position}.`;
+
+        if (position === 1) medal = "🥇";
+        if (position === 2) medal = "🥈";
+        if (position === 3) medal = "🥉";
 
         description +=
-          `${medal} <@${user.discord_id}> — 🪙 **${Number(user.coins).toLocaleString()} coins**\n`;
+          `${medal} <@${user.discord_id}> — ` +
+          `**${Number(user.total_earned).toLocaleString()} coins earned**\n`;
       });
 
       const embed = new EmbedBuilder()
         .setTitle("🏆 Coin Leaderboard")
         .setDescription(description)
         .setFooter({
-          text: "Top 10 Coin Earners"
+          text: "Top 10 coin earners"
         })
         .setTimestamp();
 
@@ -63,15 +59,11 @@ module.exports = {
       });
 
     } catch (error) {
-      console.error("❌ Leaderboard error:");
-      console.error(error);
+      console.error("❌ Leaderboard error:", error);
 
-      if (!interaction.replied && !interaction.deferred) {
-        await interaction.reply({
-          content: "❌ Leaderboard load nahi ho saka.",
-          ephemeral: true
-        });
-      }
+      await interaction.reply({
+        content: "❌ Could not load the leaderboard."
+      });
     }
   }
 };
