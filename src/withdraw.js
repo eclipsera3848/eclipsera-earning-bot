@@ -283,15 +283,16 @@ module.exports = {
       }
 
       await interaction.reply({
-        content:
-          `✅ Withdrawal request created!\n\n` +
-          `📦 **${resource.toUpperCase()}**: ${amount.toLocaleString()}\n` +
-          `🪙 **Coins reserved**: ${coinCost.toLocaleString()}\n` +
-          `🆔 **Request ID**: #${requestId}\n\n` +
-          `⏳ Admin approval ka wait karo.`,
-        ephemeral: true
-      });
-
+  content:
+    `📦 **New Withdrawal Request**\n\n` +
+    `👤 **Player:** <@${discordId}>\n` +
+    `📦 **Resource:** ${resource.toUpperCase()}\n` +
+    `🔢 **Amount:** ${amount.toLocaleString()}\n` +
+    `🪙 **Coins:** ${coinCost.toLocaleString()}\n` +
+    `🆔 **Request ID:** #${requestId}\n` +
+    `⏳ **Status:** PENDING\n\n` +
+    `Waiting for admin approval.`
+});
     } catch (error) {
       console.error(
         "❌ Withdrawal error:"
