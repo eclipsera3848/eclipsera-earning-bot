@@ -3,7 +3,7 @@ const {
   EmbedBuilder
 } = require("discord.js");
 
-const { pool } = require("../../database/database");
+const { pool } = require("../database/database");
 
 module.exports = {
   data: new SlashCommandBuilder()
