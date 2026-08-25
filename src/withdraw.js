@@ -93,7 +93,7 @@ module.exports = {
       if (currentCoins < coinCost) {
         return interaction.reply({
           content:
-            `❌ Tumhare paas enough coins nahi hain.\n\n` +
+            `❌ You don't have enough coins.\n\n` +
             `🪙 Required: **${coinCost.toLocaleString()}**\n` +
             `🪙 Balance: **${currentCoins.toLocaleString()}**`,
           ephemeral: true
@@ -156,7 +156,7 @@ module.exports = {
       if (updateResult.rowCount === 0) {
         return interaction.reply({
           content:
-            "❌ Coin balance change ho gaya. Dobara try karo.",
+            "❌ Coin balance has been changed.Try again.",
           ephemeral: true
         });
       }
