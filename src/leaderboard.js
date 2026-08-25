@@ -5,11 +5,11 @@ const {
 
 const {
   pool
-} = require("./database/database");
+} = require("../database/database");
 
 module.exports = {
   data: new SlashCommandBuilder()
-    .setName("leaderboard")
+    .setName("coin-leaderboard")
     .setDescription("Show the top coin earners"),
 
   async execute(interaction) {
@@ -61,9 +61,12 @@ module.exports = {
     } catch (error) {
       console.error("❌ Leaderboard error:", error);
 
-      await interaction.reply({
-        content: "❌ Could not load the leaderboard."
-      });
+      if (!interaction.replied) {
+        await interaction.reply({
+          content: "❌ Could not load the leaderboard.",
+          ephemeral: true
+        });
+      }
     }
   }
 };
