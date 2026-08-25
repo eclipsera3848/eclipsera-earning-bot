@@ -1,11 +1,14 @@
-const { SlashCommandBuilder } = require("discord.js");
+const {
+  SlashCommandBuilder,
+  EmbedBuilder
+} = require("discord.js");
 
-const { pool } = require("../database/database");
+const { pool } = require("./database/database");
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName("reject")
-    .setDescription("Reject a withdrawal request")
+    .setDescription("Reject a pending withdrawal request")
     .addIntegerOption(option =>
       option
         .setName("request_id")
@@ -14,94 +17,133 @@ module.exports = {
     ),
 
   async execute(interaction) {
-    if (interaction.user.id !== process.env.ADMIN_USER_ID) {
-      return interaction.reply({
-        content: "❌ You are not authorized to reject requests.",
-        ephemeral: true
-      });
-    }
-
-    const requestId =
-      interaction.options.getInteger("request_id");
-
     try {
+      // Admin permission
+      if (!interaction.memberPermissions?.has("Administrator")) {
+        return interaction.reply({
+          content: "❌ Sirf admin ye command use kar sakta hai.",
+          ephemeral: true
+        });
+      }
+
+      const requestId = interaction.options.getInteger("request_id");
+
+      // Request find karo
       const result = await pool.query(
-        `SELECT * FROM requests WHERE id = $1`,
+        `
+        SELECT *
+        FROM requests
+        WHERE id = $1
+        `,
         [requestId]
       );
 
       if (result.rows.length === 0) {
         return interaction.reply({
-          content: `❌ Request #${requestId} was not found.`,
+          content: `❌ Request #${requestId} nahi mili.`,
           ephemeral: true
         });
       }
 
       const request = result.rows[0];
 
+      // Already processed?
       if (request.status !== "PENDING") {
         return interaction.reply({
           content:
-            `❌ Request #${requestId} is already **${request.status}**.`,
+            `❌ Request #${requestId} already **${request.status}** hai.`,
           ephemeral: true
         });
       }
 
-      // Return reserved coins to player
+      // Request reject karo
+      await pool.query(
+        `
+        UPDATE requests
+        SET status = 'REJECTED'
+        WHERE id = $1
+        `,
+        [requestId]
+      );
+
+      // Coins refund karo
       await pool.query(
         `
         UPDATE users
         SET coins = coins + $1,
-            reserved_coins = reserved_coins - $1
+            reserved_coins =
+              GREATEST(reserved_coins - $1, 0)
         WHERE discord_id = $2
         `,
         [request.coin_cost, request.discord_id]
       );
 
-      // Mark request rejected
-      await pool.query(
-        `
-        UPDATE requests
-        SET status = 'REJECTED',
-            approved_by = $1
-        WHERE id = $2
-        `,
-        [interaction.user.id, requestId]
-      );
-
-      // Save transaction
+      // Transaction
       await pool.query(
         `
         INSERT INTO transactions
-          (discord_id, type, amount, reason, request_id)
+        (discord_id, type, amount, reason, request_id)
         VALUES
-          ($1, 'WITHDRAW_REJECTED', $2, $3, $4)
+        ($1, 'WITHDRAW_REFUND', $2, $3, $4)
         `,
         [
           request.discord_id,
           request.coin_cost,
-          `${request.resource} withdrawal rejected - coins returned`,
+          `Rejected ${request.resource} withdrawal - coins refunded`,
           requestId
         ]
       );
 
+      const embed = new EmbedBuilder()
+        .setTitle("❌ Withdrawal Rejected")
+        .addFields(
+          {
+            name: "🆔 Request",
+            value: `#${requestId}`,
+            inline: true
+          },
+          {
+            name: "👤 Player",
+            value: `<@${request.discord_id}>`,
+            inline: true
+          },
+          {
+            name: "📦 Resource",
+            value: request.resource.toUpperCase(),
+            inline: true
+          },
+          {
+            name: "🔢 Amount",
+            value: Number(request.amount).toLocaleString(),
+            inline: true
+          },
+          {
+            name: "🪙 Coins Refunded",
+            value: Number(request.coin_cost).toLocaleString(),
+            inline: true
+          },
+          {
+            name: "👮 Rejected By",
+            value: `<@${interaction.user.id}>`,
+            inline: true
+          }
+        )
+        .setTimestamp();
+
       await interaction.reply({
-        content:
-          `❌ **Request #${requestId} rejected.**\n\n` +
-          `👤 Player: <@${request.discord_id}>\n` +
-          `📦 Resource: **${request.resource.toUpperCase()}**\n` +
-          `🔢 Amount: **${request.amount}**\n` +
-          `🪙 **${Number(request.coin_cost).toLocaleString()} coins returned.**`
+        embeds: [embed]
       });
 
     } catch (error) {
-      console.error("❌ Reject error:", error);
+      console.error("❌ Reject error:");
+      console.error(error);
 
-      await interaction.reply({
-        content:
-          "❌ Something went wrong while rejecting the request.",
-        ephemeral: true
-      });
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction.reply({
+          content: "❌ Request reject nahi ho saki.",
+          ephemeral: true
+        });
+      }
     }
   }
 };
