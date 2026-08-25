@@ -47,7 +47,6 @@ module.exports = {
       const embed = new EmbedBuilder()
         .setTitle("🏆 Coin Leaderboard")
         .setDescription(description)
-        .setColor(0x5865f2)
         .setFooter({
           text: "Top 10 coin earners"
         })
@@ -58,10 +57,14 @@ module.exports = {
       });
 
     } catch (error) {
-      console.error("❌ Leaderboard error:");
-      console.error(error);
+      console.error("❌ Leaderboard error:", error);
 
-      if (!interaction.replied) {
+      if (interaction.replied || interaction.deferred) {
+        await interaction.followUp({
+          content: "❌ Could not load the leaderboard.",
+          ephemeral: true
+        });
+      } else {
         await interaction.reply({
           content: "❌ Could not load the leaderboard.",
           ephemeral: true
