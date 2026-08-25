@@ -13,6 +13,10 @@ const {
 } = require("./database/database");
 
 const balanceCommand = require("./commands/balance");
+const withdrawCommand = require("./withdraw");
+const leaderboardCommand = require("./leaderboard");
+const approveCommand = require("./approve");
+const rejectCommand = require("./reject");
 
 const client = new Client({
   intents: [
@@ -29,14 +33,44 @@ const client = new Client({
 // Commands collection
 client.commands = new Collection();
 
+// Balance
 client.commands.set(
   balanceCommand.data.name,
   balanceCommand
 );
 
+// Withdraw
+client.commands.set(
+  withdrawCommand.data.name,
+  withdrawCommand
+);
+
+// Leaderboard
+client.commands.set(
+  leaderboardCommand.data.name,
+  leaderboardCommand
+);
+
+// Approve
+client.commands.set(
+  approveCommand.data.name,
+  approveCommand
+);
+
+// Reject
+client.commands.set(
+  rejectCommand.data.name,
+  rejectCommand
+);
+
+console.log(
+  "📋 Loaded commands:",
+  [...client.commands.keys()].join(", ")
+);
+
 // Bot ready
 client.once("ready", async () => {
-  console.log(`✅ Eclipsera Earning Bot is online!`);
+  console.log("✅ Eclipsera Earning Bot is online!");
   console.log(`🤖 Logged in as ${client.user.tag}`);
 
   try {
@@ -69,25 +103,46 @@ client.on("messageCreate", async (message) => {
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
-  const command = client.commands.get(interaction.commandName);
+  const command = client.commands.get(
+    interaction.commandName
+  );
 
-  if (!command) return;
+  if (!command) {
+    console.error(
+      `❌ Command not loaded: ${interaction.commandName}`
+    );
+
+    return interaction.reply({
+      content: "❌ This command is not loaded by the bot.",
+      ephemeral: true
+    });
+  }
 
   try {
     await command.execute(interaction);
   } catch (error) {
-    console.error("❌ Command error:", error);
+    console.error(
+      `❌ Error in /${interaction.commandName}:`
+    );
+    console.error(error);
 
-    if (interaction.replied || interaction.deferred) {
-      await interaction.followUp({
-        content: "❌ Something went wrong.",
-        ephemeral: true
-      });
-    } else {
-      await interaction.reply({
-        content: "❌ Something went wrong.",
-        ephemeral: true
-      });
+    try {
+      if (interaction.replied || interaction.deferred) {
+        await interaction.followUp({
+          content: "❌ Something went wrong.",
+          ephemeral: true
+        });
+      } else {
+        await interaction.reply({
+          content: "❌ Something went wrong.",
+          ephemeral: true
+        });
+      }
+    } catch (replyError) {
+      console.error(
+        "❌ Could not send Discord error reply:",
+        replyError
+      );
     }
   }
 });
