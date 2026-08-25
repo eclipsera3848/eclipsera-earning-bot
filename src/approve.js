@@ -3,75 +3,75 @@ const {
   EmbedBuilder
 } = require("discord.js");
 
-const { pool } = require("./database/database");
+const {
+  pool
+} = require("./database/database");
 
 const ADMIN_CHANNEL_ID = process.env.ADMIN_CHANNEL_ID;
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName("approve")
-    .setDescription("Approve a pending withdrawal request")
+    .setDescription("Approve a withdrawal request")
+
     .addIntegerOption(option =>
       option
         .setName("request_id")
         .setDescription("Withdrawal request ID")
         .setRequired(true)
+        .setMinValue(1)
     ),
 
   async execute(interaction) {
+    if (
+      ADMIN_CHANNEL_ID &&
+      interaction.channelId !== ADMIN_CHANNEL_ID
+    ) {
+      return interaction.reply({
+        content:
+          "❌ This command can only be used in the admin channel.",
+        ephemeral: true
+      });
+    }
+
+    const requestId =
+      interaction.options.getInteger("request_id");
+
+    const client = await pool.connect();
+
     try {
-      // Admin permission
-      if (!interaction.memberPermissions?.has("Administrator")) {
-        return interaction.reply({
-          content: "❌ Sirf admin ye command use kar sakta hai.",
-          ephemeral: true
-        });
-      }
+      await client.query("BEGIN");
 
-      const requestId = interaction.options.getInteger("request_id");
-
-      // Request find karo
-      const result = await pool.query(
+      const requestResult = await client.query(
         `
         SELECT *
         FROM requests
         WHERE id = $1
+        FOR UPDATE
         `,
         [requestId]
       );
 
-      if (result.rows.length === 0) {
+      if (requestResult.rows.length === 0) {
+        await client.query("ROLLBACK");
+
         return interaction.reply({
-          content: `❌ Request #${requestId} nahi mili.`,
-          ephemeral: true
+          content: `❌ Request #${requestId} was not found.`
         });
       }
 
-      const request = result.rows[0];
+      const request = requestResult.rows[0];
 
-      // Already processed?
       if (request.status !== "PENDING") {
+        await client.query("ROLLBACK");
+
         return interaction.reply({
           content:
-            `❌ Request #${requestId} already **${request.status}** hai.`,
-          ephemeral: true
+            `❌ Request #${requestId} is already **${request.status}**.`
         });
       }
 
-      // Approve request
-      await pool.query(
-        `
-        UPDATE requests
-        SET status = 'APPROVED',
-            approved_at = CURRENT_TIMESTAMP,
-            approved_by = $1
-        WHERE id = $2
-        `,
-        [interaction.user.id, requestId]
-      );
-
-      // Reserved coins release karo
-      await pool.query(
+      await client.query(
         `
         UPDATE users
         SET reserved_coins =
@@ -80,24 +80,43 @@ module.exports = {
           total_spent + $1
         WHERE discord_id = $2
         `,
-        [request.coin_cost, request.discord_id]
+        [
+          request.coin_cost,
+          request.discord_id
+        ]
       );
 
-      // Transaction
-      await pool.query(
+      await client.query(
+        `
+        UPDATE requests
+        SET
+          status = 'APPROVED',
+          approved_at = CURRENT_TIMESTAMP,
+          approved_by = $1
+        WHERE id = $2
+        `,
+        [
+          interaction.user.id,
+          requestId
+        ]
+      );
+
+      await client.query(
         `
         INSERT INTO transactions
-        (discord_id, type, amount, reason, request_id)
+          (discord_id, type, amount, reason, request_id)
         VALUES
-        ($1, 'WITHDRAW_APPROVED', $2, $3, $4)
+          ($1, 'WITHDRAW_APPROVED', $2, $3, $4)
         `,
         [
           request.discord_id,
           request.coin_cost,
-          `Approved ${request.resource} withdrawal`,
+          `Withdrawal approved: ${request.resource}`,
           requestId
         ]
       );
+
+      await client.query("COMMIT");
 
       const embed = new EmbedBuilder()
         .setTitle("✅ Withdrawal Approved")
@@ -140,15 +159,18 @@ module.exports = {
       });
 
     } catch (error) {
-      console.error("❌ Approve error:");
-      console.error(error);
+      await client.query("ROLLBACK");
 
-      if (!interaction.replied && !interaction.deferred) {
+      console.error("❌ Approve error:", error);
+
+      if (!interaction.replied) {
         await interaction.reply({
-          content: "❌ Request approve nahi ho saki.",
-          ephemeral: true
+          content: "❌ Could not approve the request."
         });
       }
+
+    } finally {
+      client.release();
     }
   }
 };
