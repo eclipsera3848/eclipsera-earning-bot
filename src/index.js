@@ -25,56 +25,46 @@ const client = new Client({
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.DirectMessages
   ],
+
   partials: [
     Partials.Channel
   ]
 });
 
-// Commands collection
 client.commands = new Collection();
 
-// Balance
 client.commands.set(
   balanceCommand.data.name,
   balanceCommand
 );
 
-// Withdraw
 client.commands.set(
   withdrawCommand.data.name,
   withdrawCommand
 );
 
-// Leaderboard
 client.commands.set(
   leaderboardCommand.data.name,
   leaderboardCommand
 );
 
-// Approve
 client.commands.set(
   approveCommand.data.name,
   approveCommand
 );
 
-// Reject
 client.commands.set(
   rejectCommand.data.name,
   rejectCommand
 );
 
-console.log(
-  "📋 Loaded commands:",
-  [...client.commands.keys()].join(", ")
-);
-
-// Bot ready
 client.once("ready", async () => {
   console.log("✅ Eclipsera Earning Bot is online!");
   console.log(`🤖 Logged in as ${client.user.tag}`);
 
   try {
     await initDatabase();
+
     console.log("✅ Database connected successfully!");
   } catch (error) {
     console.error("❌ Database connection failed:");
@@ -82,7 +72,6 @@ client.once("ready", async () => {
   }
 });
 
-// Message → +1 Coin
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
   if (!message.guild) return;
@@ -99,7 +88,6 @@ client.on("messageCreate", async (message) => {
   }
 });
 
-// Slash commands
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
@@ -107,23 +95,13 @@ client.on("interactionCreate", async (interaction) => {
     interaction.commandName
   );
 
-  if (!command) {
-    console.error(
-      `❌ Command not loaded: ${interaction.commandName}`
-    );
-
-    return interaction.reply({
-      content: "❌ This command is not loaded by the bot.",
-      ephemeral: true
-    });
-  }
+  if (!command) return;
 
   try {
     await command.execute(interaction);
+
   } catch (error) {
-    console.error(
-      `❌ Error in /${interaction.commandName}:`
-    );
+    console.error("❌ Command error:");
     console.error(error);
 
     try {
@@ -139,10 +117,7 @@ client.on("interactionCreate", async (interaction) => {
         });
       }
     } catch (replyError) {
-      console.error(
-        "❌ Could not send Discord error reply:",
-        replyError
-      );
+      console.error("❌ Could not reply:", replyError);
     }
   }
 });
