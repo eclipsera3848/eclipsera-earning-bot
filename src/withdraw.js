@@ -7,8 +7,9 @@ const {
   getUser,
   createUser,
   pool
-} = require("./database/database");
+} = require("../database/database");
 
+// Resource rates
 const RATES = {
   bread: 10000,
   wood: 5000,
@@ -33,26 +34,11 @@ module.exports = {
         .setDescription("Choose a resource")
         .setRequired(true)
         .addChoices(
-          {
-            name: "🥖 Bread",
-            value: "bread"
-          },
-          {
-            name: "🪵 Wood",
-            value: "wood"
-          },
-          {
-            name: "🪨 Stone",
-            value: "stone"
-          },
-          {
-            name: "💧 Water",
-            value: "water"
-          },
-          {
-            name: "⚒️ Iron",
-            value: "iron"
-          }
+          { name: "🥖 Bread", value: "bread" },
+          { name: "🪵 Wood", value: "wood" },
+          { name: "🪨 Stone", value: "stone" },
+          { name: "💧 Water", value: "water" },
+          { name: "⚒️ Iron", value: "iron" }
         )
     )
 
@@ -67,146 +53,94 @@ module.exports = {
 
   async execute(interaction) {
     const discordId = interaction.user.id;
-
-    const resource =
-      interaction.options.getString("resource");
-
-    const amount =
-      interaction.options.getInteger("amount");
+    const resource = interaction.options.getString("resource");
+    const amount = interaction.options.getInteger("amount");
 
     try {
       await createUser(discordId);
 
       const user = await getUser(discordId);
 
-      const resourcesPer50000 =
-        RATES[resource];
+      const resourcesPer50000 = RATES[resource];
 
       const coinCost = Math.ceil(
-        (amount * 50000) /
-        resourcesPer50000
+        (amount * 50000) / resourcesPer50000
       );
 
-      const currentCoins =
-        Number(user.coins);
+      const currentCoins = Number(user.coins);
 
       if (currentCoins < coinCost) {
         return interaction.reply({
           content:
-            `❌ You don't have enough coins.\n\n` +
-            `🪙 Required: **${coinCost.toLocaleString()}**\n` +
-            `🪙 Balance: **${currentCoins.toLocaleString()}**`,
-          ephemeral: true
+            `❌ You need **${coinCost.toLocaleString()} coins**, ` +
+            `but you only have **${currentCoins.toLocaleString()} coins**.`
         });
       }
 
-      // Daily limit
-      const dailyResult =
-        await pool.query(
-          `
-          SELECT COALESCE(SUM(amount), 0) AS total
-          FROM requests
-          WHERE discord_id = $1
-            AND resource = $2
-            AND status IN ('PENDING', 'APPROVED')
-            AND created_at >= CURRENT_DATE
-          `,
-          [discordId, resource]
+      const dailyResult = await pool.query(
+        `
+        SELECT COALESCE(SUM(amount), 0) AS total
+        FROM requests
+        WHERE discord_id = $1
+          AND resource = $2
+          AND status IN ('PENDING', 'APPROVED')
+          AND created_at >= CURRENT_DATE
+        `,
+        [discordId, resource]
+      );
+
+      const todayAmount = Number(dailyResult.rows[0].total);
+
+      if (todayAmount + amount > MAX_AMOUNT) {
+        const remaining = Math.max(
+          0,
+          MAX_AMOUNT - todayAmount
         );
-
-      const todayAmount =
-        Number(dailyResult.rows[0].total);
-
-      if (
-        todayAmount + amount >
-        MAX_AMOUNT
-      ) {
-        const remaining =
-          Math.max(
-            0,
-            MAX_AMOUNT - todayAmount
-          );
 
         return interaction.reply({
           content:
             `❌ Daily limit reached for **${resource}**.\n` +
-            `Remaining today: **${remaining}**`,
-          ephemeral: true
+            `Remaining today: **${remaining}**`
         });
       }
 
-      // Coins reserve
-      const updateResult =
-        await pool.query(
-          `
-          UPDATE users
-          SET coins = coins - $1,
-              reserved_coins =
-                reserved_coins + $1
-          WHERE discord_id = $2
-            AND coins >= $1
-          RETURNING coins
-          `,
-          [
-            coinCost,
-            discordId
-          ]
-        );
+      const updateResult = await pool.query(
+        `
+        UPDATE users
+        SET coins = coins - $1,
+            reserved_coins = reserved_coins + $1
+        WHERE discord_id = $2
+          AND coins >= $1
+        RETURNING coins
+        `,
+        [coinCost, discordId]
+      );
 
       if (updateResult.rowCount === 0) {
         return interaction.reply({
-          content:
-            "❌ Coin balance has been changed.Try again.",
-          ephemeral: true
+          content: "❌ Your coin balance changed. Please try again."
         });
       }
 
-      // Request create
-      const requestResult =
-        await pool.query(
-          `
-          INSERT INTO requests
-          (
-            discord_id,
-            resource,
-            amount,
-            coin_cost,
-            status
-          )
-          VALUES
+      const requestResult = await pool.query(
+        `
+        INSERT INTO requests
+          (discord_id, resource, amount, coin_cost, status)
+        VALUES
           ($1, $2, $3, $4, 'PENDING')
-          RETURNING id
-          `,
-          [
-            discordId,
-            resource,
-            amount,
-            coinCost
-          ]
-        );
+        RETURNING id
+        `,
+        [discordId, resource, amount, coinCost]
+      );
 
-      const requestId =
-        requestResult.rows[0].id;
+      const requestId = requestResult.rows[0].id;
 
-      // Transaction
       await pool.query(
         `
         INSERT INTO transactions
-        (
-          discord_id,
-          type,
-          amount,
-          reason,
-          request_id
-        )
+          (discord_id, type, amount, reason, request_id)
         VALUES
-        (
-          $1,
-          'WITHDRAW_RESERVE',
-          $2,
-          $3,
-          $4
-        )
+          ($1, 'WITHDRAW_RESERVE', $2, $3, $4)
         `,
         [
           discordId,
@@ -216,97 +150,77 @@ module.exports = {
         ]
       );
 
-      // Admin channel
+      // Send request to the admin channel
       if (ADMIN_CHANNEL_ID) {
-        try {
-          const channel =
-            await interaction.client.channels.fetch(
-              ADMIN_CHANNEL_ID
-            );
+        const channel = await interaction.client.channels.fetch(
+          ADMIN_CHANNEL_ID
+        );
 
-          if (channel) {
-            const embed =
-              new EmbedBuilder()
-                .setTitle(
-                  "📦 New Withdrawal Request"
-                )
-                .addFields(
-                  {
-                    name: "👤 Player",
-                    value:
-                      `<@${discordId}>`,
-                    inline: true
-                  },
-                  {
-                    name: "📦 Resource",
-                    value:
-                      resource.toUpperCase(),
-                    inline: true
-                  },
-                  {
-                    name: "🔢 Amount",
-                    value:
-                      amount.toLocaleString(),
-                    inline: true
-                  },
-                  {
-                    name: "🪙 Coin Cost",
-                    value:
-                      coinCost.toLocaleString(),
-                    inline: true
-                  },
-                  {
-                    name: "🆔 Request ID",
-                    value:
-                      `#${requestId}`,
-                    inline: true
-                  },
-                  {
-                    name: "📌 Status",
-                    value:
-                      "PENDING",
-                    inline: true
-                  }
-                )
-                .setTimestamp();
+        if (channel) {
+          const embed = new EmbedBuilder()
+            .setTitle("📦 New Withdrawal Request")
+            .setDescription(
+              `A new withdrawal request has been submitted.`
+            )
+            .addFields(
+              {
+                name: "👤 Player",
+                value: `<@${discordId}>`,
+                inline: true
+              },
+              {
+                name: "📦 Resource",
+                value: resource.toUpperCase(),
+                inline: true
+              },
+              {
+                name: "🔢 Amount",
+                value: amount.toLocaleString(),
+                inline: true
+              },
+              {
+                name: "🪙 Coin Cost",
+                value: coinCost.toLocaleString(),
+                inline: true
+              },
+              {
+                name: "🆔 Request ID",
+                value: `#${requestId}`,
+                inline: true
+              },
+              {
+                name: "📌 Status",
+                value: "PENDING",
+                inline: true
+              }
+            )
+            .setTimestamp();
 
-            await channel.send({
-              embeds: [embed]
-            });
-          }
-        } catch (channelError) {
-          console.error(
-            "❌ Admin channel error:"
-          );
-          console.error(channelError);
+          await channel.send({
+            embeds: [embed]
+          });
         }
       }
 
+      // PUBLIC response — NOT ephemeral
       await interaction.reply({
-  content:
-    `📦 **New Withdrawal Request**\n\n` +
-    `👤 **Player:** <@${discordId}>\n` +
-    `📦 **Resource:** ${resource.toUpperCase()}\n` +
-    `🔢 **Amount:** ${amount.toLocaleString()}\n` +
-    `🪙 **Coins:** ${coinCost.toLocaleString()}\n` +
-    `🆔 **Request ID:** #${requestId}\n` +
-    `⏳ **Status:** PENDING\n\n` +
-    `Waiting for admin approval.`
-});
-    } catch (error) {
-      console.error(
-        "❌ Withdrawal error:"
-      );
-      console.error(error);
+        content:
+          `📦 **Withdrawal Request Created**\n\n` +
+          `👤 Player: <@${discordId}>\n` +
+          `📦 Resource: **${resource.toUpperCase()}**\n` +
+          `🔢 Amount: **${amount.toLocaleString()}**\n` +
+          `🪙 Coins reserved: **${coinCost.toLocaleString()}**\n` +
+          `🆔 Request ID: **#${requestId}**\n` +
+          `📌 Status: **PENDING**`
+      });
 
-      if (
-        !interaction.replied &&
-        !interaction.deferred
-      ) {
+    } catch (error) {
+      console.error("❌ Withdrawal error:", error);
+
+      if (!interaction.replied) {
         await interaction.reply({
           content:
-            "❌ Withdrawal request create nahi ho saki.",
-          ephemeral: true
+            "❌ Something went wrong while creating the withdrawal request."
         });
       }
     }
