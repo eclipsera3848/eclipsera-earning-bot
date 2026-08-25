@@ -11,10 +11,12 @@ const {
   addCoin
 } = require("./database/database");
 
+// Commands
 const balanceCommand = require("./commands/balance");
-const withdrawCommand = require("./commands/withdraw");
-const leaderboardCommand = require("./commands/leaderboard");
+const withdrawCommand = require("./withdraw");
+const leaderboardCommand = require("./leaderboard");
 
+// Create Discord client
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -23,6 +25,7 @@ const client = new Client({
   ]
 });
 
+// Command collection
 client.commands = new Collection();
 
 // Register commands
@@ -57,7 +60,7 @@ client.once("ready", async () => {
   }
 });
 
-// Give 1 coin for every message
+// Give 1 coin for every normal message
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
   if (!message.guild) return;
@@ -69,11 +72,12 @@ client.on("messageCreate", async (message) => {
       `💰 +1 coin → ${message.author.tag}`
     );
   } catch (error) {
-    console.error("❌ Coin error:", error);
+    console.error("❌ Coin error:");
+    console.error(error);
   }
 });
 
-// Slash commands
+// Handle slash commands
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
@@ -81,12 +85,20 @@ client.on("interactionCreate", async (interaction) => {
     interaction.commandName
   );
 
-  if (!command) return;
+  if (!command) {
+    console.log(
+      `⚠️ Unknown command: ${interaction.commandName}`
+    );
+    return;
+  }
 
   try {
     await command.execute(interaction);
   } catch (error) {
-    console.error("❌ Command error:", error);
+    console.error(
+      `❌ Error in /${interaction.commandName}:`
+    );
+    console.error(error);
 
     try {
       if (interaction.replied || interaction.deferred) {
@@ -101,17 +113,17 @@ client.on("interactionCreate", async (interaction) => {
         });
       }
     } catch (replyError) {
-      console.error(
-        "❌ Could not send error reply:",
-        replyError
-      );
+      console.error("❌ Could not send error reply:");
+      console.error(replyError);
     }
   }
 });
 
+// Check Discord token
 if (!process.env.DISCORD_TOKEN) {
-  console.error("❌ DISCORD_TOKEN is missing!");
+  console.error("❌ DISCORD_TOKEN is missing from Railway Variables!");
   process.exit(1);
 }
 
+// Login
 client.login(process.env.DISCORD_TOKEN);
