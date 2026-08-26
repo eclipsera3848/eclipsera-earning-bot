@@ -814,16 +814,7 @@ if (!adminId || interaction.user.id !== adminId) {
       // REJECT
       // ======================================================
 
-      if (
-        interaction.isButton() &&
-        interaction.customId.startsWith(
-          "withdraw_reject_"
-        )
-      ) {
-        const adminId =
-          process.env.ADMIN_ID;
-
-        if (
+if (
   interaction.isButton() &&
   interaction.customId.startsWith("withdraw_reject_")
 ) {
@@ -835,6 +826,11 @@ if (!adminId || interaction.user.id !== adminId) {
       ephemeral: true
     });
   }
+
+  const withdrawalId = interaction.customId.replace(
+    "withdraw_reject_",
+    ""
+  );
 
         const withdrawalId =
           interaction.customId.replace(
