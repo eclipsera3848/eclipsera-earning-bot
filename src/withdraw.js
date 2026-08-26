@@ -1013,13 +1013,14 @@ if (
               `🆔 Request ID: **#${withdrawal.id}**`
             );
 
-          } catch (dmError) {
-            console.error(
-              "❌ Could not DM player:",
-              dmError
-            );
+} catch (dmError) {
+  console.error(
+    "❌ Could not DM player:",
+    dmError
+  );
+}
 
-          return;
+return;
 
         } catch (error) {
 
