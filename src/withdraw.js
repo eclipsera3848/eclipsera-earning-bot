@@ -1029,6 +1029,6 @@ if (
 
     client.release();
 
-    throw error;
-        }
+throw error;
+}
 }
