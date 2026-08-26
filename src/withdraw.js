@@ -1015,7 +1015,7 @@ if (
       );
     }
 
-    return;
+        return;
 
   } catch (error) {
     try {
@@ -1029,6 +1029,12 @@ if (
 
     client.release();
 
-throw error;
-}
-}
+    throw error;
+  }
+        } // closes reject button if
+
+    } catch (error) {
+      console.error("❌ Withdraw interaction error:", error);
+    }
+  }
+};
