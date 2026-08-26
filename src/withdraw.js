@@ -625,19 +625,17 @@ return interaction.reply({
       // ======================================================
 
       if (
-        interaction.isButton() &&
-        interaction.customId.startsWith(
-          "withdraw_approve_"
-        )
-      ) {
-        const adminId = process.env.ADMIN_ID;
+  interaction.isButton() &&
+  interaction.customId.startsWith("withdraw_approve_")
+) {
+  const adminId = process.env.ADMIN_ID;
 
-if (!adminId || interaction.user.id !== adminId) {
-  return interaction.reply({
-    content: "❌ Only the bot administrator can approve withdrawals.",
-    ephemeral: true
-  });
-}
+  if (!adminId || interaction.user.id !== adminId) {
+    return interaction.reply({
+      content: "❌ Only the bot administrator can approve withdrawals.",
+      ephemeral: true
+    });
+  }
 
         const withdrawalId =
           interaction.customId.replace(
