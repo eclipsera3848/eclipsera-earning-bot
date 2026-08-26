@@ -999,45 +999,35 @@ if (
           // PLAYER DM
           // --------------------------------------------------
 
-          try {
-            const player =
-              await interaction.client.users.fetch(
-                withdrawal.discord_id
-              );
+              try {
+      const player = await interaction.client.users.fetch(
+        withdrawal.discord_id
+      );
 
-            await player.send(
-              `❌ **Your withdrawal was rejected.**\n\n` +
-              `${resourceData.emoji} Resource: **${Number(withdrawal.amount).toLocaleString()} ${resourceData.name}**\n` +
-              `💰 Refunded: **${Number(withdrawal.coin_cost).toLocaleString()} coins**\n` +
-              `🎮 Nickname: **${withdrawal.nickname}**\n` +
-              `🆔 Request ID: **#${withdrawal.id}**`
-            );
+      await player.send(
+        `❌ **Your withdrawal was rejected.**`
+      );
 
-} catch (dmError) {
-  console.error(
-    "❌ Could not DM player:",
-    dmError
-  );
-return;
+    } catch (dmError) {
+      console.error(
+        "❌ Could not DM player:",
+        dmError
+      );
+    }
 
-        } catch (error) {
+    return;
 
-          try {
-            await client.query("ROLLBACK");
-          } catch (rollbackError) {
-            console.error(
-              "Rollback error:",
-              rollbackError
-            );
-          }
+  } catch (error) {
+    try {
+      await client.query("ROLLBACK");
+    } catch (rollbackError) {
+      console.error(
+        "Rollback error:",
+        rollbackError
+      );
+    }
 
-          client.release();
+    client.release();
 
-          throw error;
+    throw error;
         }
-      }
-
-    
-  }
-};
-            
