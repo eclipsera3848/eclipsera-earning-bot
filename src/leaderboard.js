@@ -3,7 +3,7 @@ const {
   EmbedBuilder
 } = require("discord.js");
 
-const { pool } = require("../database/database");
+const { pool } = require("./database/database");
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -24,7 +24,8 @@ module.exports = {
 
       if (result.rows.length === 0) {
         return interaction.reply({
-          content: "📊 No users found yet."
+          content: "📊 No users found yet.",
+          ephemeral: true
         });
       }
 
@@ -47,6 +48,7 @@ module.exports = {
       const embed = new EmbedBuilder()
         .setTitle("🏆 Coin Leaderboard")
         .setDescription(description)
+        .setColor(0xF1C40F)
         .setFooter({
           text: "Top 10 coin earners"
         })
@@ -59,12 +61,7 @@ module.exports = {
     } catch (error) {
       console.error("❌ Leaderboard error:", error);
 
-      if (interaction.replied || interaction.deferred) {
-        await interaction.followUp({
-          content: "❌ Could not load the leaderboard.",
-          ephemeral: true
-        });
-      } else {
+      if (!interaction.replied && !interaction.deferred) {
         await interaction.reply({
           content: "❌ Could not load the leaderboard.",
           ephemeral: true
