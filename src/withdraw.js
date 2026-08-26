@@ -15,6 +15,19 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName("withdraw")
     .setDescription("Request a coin withdrawal"),
+  .addStringOption(option =>
+  option
+    .setName("resource")
+    .setDescription("Select the resource you want to withdraw")
+    .setRequired(true)
+    .addChoices(
+      { name: "⛓️ Iron", value: "iron" },
+      { name: "💧 Water", value: "water" },
+      { name: "🪵 Wood", value: "wood" },
+      { name: "🪨 Stone", value: "stone" },
+      { name: "🍞 Bread", value: "bread" }
+    )
+)
 
   async execute(interaction) {
     try {
