@@ -2,22 +2,21 @@ const {
   SlashCommandBuilder,
   StringSelectMenuBuilder,
   StringSelectMenuOptionBuilder,
+  ActionRowBuilder,
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
-  ActionRowBuilder,
   EmbedBuilder,
   ButtonBuilder,
-  ButtonStyle,
-  MessageFlags
+  ButtonStyle
 } = require("discord.js");
 
 const { pool } = require("./database/database");
 
-// ======================================================
-// RESOURCE CONFIG
-// 1000 RESOURCES = PRICE BELOW
-// ======================================================
+// ============================================================
+// RESOURCE PRICES
+// 1000 resources = this many coins
+// ============================================================
 
 const RESOURCES = {
   iron: {
@@ -54,118 +53,154 @@ const RESOURCES = {
 const MIN_AMOUNT = 100;
 const MAX_AMOUNT = 1000;
 
-// ======================================================
-// HELPER
-// ======================================================
+// ============================================================
+// CALCULATE COIN COST
+// ============================================================
 
 function calculateCost(resource, amount) {
-  const config = RESOURCES[resource];
+  const resourceData = RESOURCES[resource];
 
-  if (!config) {
-    return null;
+  if (!resourceData) {
+    throw new Error("Invalid resource.");
   }
 
-  return Math.ceil((config.maxCoins / 1000) * amount);
+  const costPerResource =
+    resourceData.maxCoins / MAX_AMOUNT;
+
+  return Math.ceil(costPerResource * amount);
 }
 
-// ======================================================
-// COMMAND
-// ======================================================
+// ============================================================
+// CREATE WITHDRAWALS TABLE
+// ============================================================
+
+async function initWithdrawalsTable() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS withdrawals (
+      id SERIAL PRIMARY KEY,
+      discord_id VARCHAR(50) NOT NULL,
+      resource VARCHAR(20),
+      amount INTEGER NOT NULL,
+      nickname VARCHAR(100) NOT NULL,
+      coin_cost BIGINT,
+      status VARCHAR(20) NOT NULL DEFAULT 'pending',
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      approved_at TIMESTAMP,
+      approved_by VARCHAR(50)
+    )
+  `);
+
+  // Existing installations may already have withdrawals table.
+  // Add missing columns without destroying existing data.
+
+  await pool.query(`
+    ALTER TABLE withdrawals
+    ADD COLUMN IF NOT EXISTS resource VARCHAR(20)
+  `);
+
+  await pool.query(`
+    ALTER TABLE withdrawals
+    ADD COLUMN IF NOT EXISTS coin_cost BIGINT
+  `);
+
+  await pool.query(`
+    ALTER TABLE withdrawals
+    ADD COLUMN IF NOT EXISTS approved_at TIMESTAMP
+  `);
+
+  await pool.query(`
+    ALTER TABLE withdrawals
+    ADD COLUMN IF NOT EXISTS approved_by VARCHAR(50)
+  `);
+}
+
+// ============================================================
+// SLASH COMMAND
+// ============================================================
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName("withdraw")
-    .setDescription("Withdraw your coins as game resources"),
+    .setDescription("Withdraw Iron, Water, Stone, Wood or Bread"),
 
-  // ====================================================
+  // ==========================================================
   // /withdraw
-  // ====================================================
+  // ==========================================================
 
   async execute(interaction) {
     try {
-      await pool.query(`
-        CREATE TABLE IF NOT EXISTS withdrawals (
-          id SERIAL PRIMARY KEY,
-          discord_id VARCHAR(50) NOT NULL,
-          resource VARCHAR(20) NOT NULL DEFAULT 'iron',
-          amount INTEGER NOT NULL,
-          coin_cost BIGINT NOT NULL DEFAULT 0,
-          nickname TEXT NOT NULL DEFAULT '',
-          status VARCHAR(20) NOT NULL DEFAULT 'pending',
-          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-      `);
+      await initWithdrawalsTable();
 
-      // Add columns if old withdrawals table already exists
-      await pool.query(`
-        ALTER TABLE withdrawals
-        ADD COLUMN IF NOT EXISTS resource VARCHAR(20) NOT NULL DEFAULT 'iron'
-      `);
-
-      await pool.query(`
-        ALTER TABLE withdrawals
-        ADD COLUMN IF NOT EXISTS coin_cost BIGINT NOT NULL DEFAULT 0
-      `);
-
-      await pool.query(`
-        ALTER TABLE withdrawals
-        ADD COLUMN IF NOT EXISTS nickname TEXT NOT NULL DEFAULT ''
-      `);
-
-      const selectMenu = new StringSelectMenuBuilder()
+      const menu = new StringSelectMenuBuilder()
         .setCustomId("withdraw_resource")
-        .setPlaceholder("Select the resource you want");
-
-      for (const [key, resource] of Object.entries(RESOURCES)) {
-        selectMenu.addOptions(
+        .setPlaceholder("Select a resource to withdraw")
+        .addOptions(
           new StringSelectMenuOptionBuilder()
-            .setLabel(resource.name)
-            .setDescription(
-              `1000 ${resource.name} = ${resource.maxCoins.toLocaleString()} coins`
-            )
-            .setValue(key)
-            .setEmoji(resource.emoji)
+            .setLabel("Iron")
+            .setDescription("1000 Iron = 30,000 coins")
+            .setEmoji("⛓️")
+            .setValue("iron"),
+
+          new StringSelectMenuOptionBuilder()
+            .setLabel("Water")
+            .setDescription("1000 Water = 20,000 coins")
+            .setEmoji("💧")
+            .setValue("water"),
+
+          new StringSelectMenuOptionBuilder()
+            .setLabel("Stone")
+            .setDescription("1000 Stone = 10,000 coins")
+            .setEmoji("🪨")
+            .setValue("stone"),
+
+          new StringSelectMenuOptionBuilder()
+            .setLabel("Wood")
+            .setDescription("1000 Wood = 7,500 coins")
+            .setEmoji("🪵")
+            .setValue("wood"),
+
+          new StringSelectMenuOptionBuilder()
+            .setLabel("Bread")
+            .setDescription("1000 Bread = 500 coins")
+            .setEmoji("🍞")
+            .setValue("bread")
         );
-      }
 
-      const row = new ActionRowBuilder().addComponents(selectMenu);
+      const row = new ActionRowBuilder()
+        .addComponents(menu);
 
-      const embed = new EmbedBuilder()
-        .setTitle("💸 Withdraw Resources")
-        .setDescription(
-          "Select the resource you want to withdraw.\n\n" +
-          "📌 Minimum: **100 resources**\n" +
-          "📌 Maximum: **1000 resources**\n\n" +
-          "Choose a resource below to continue."
-        )
-        .setColor(0x5865f2);
-
-      return interaction.reply({
-        embeds: [embed],
+      await interaction.reply({
+        content:
+          "💸 **Withdraw Resources**\n\n" +
+          "Select the resource you want to withdraw.\n" +
+          "Minimum: **100**\n" +
+          "Maximum: **1000**",
         components: [row],
-        flags: MessageFlags.Ephemeral
+        ephemeral: true
       });
+
     } catch (error) {
-      console.error("Withdraw command error:", error);
+      console.error("❌ Withdraw command error:", error);
 
       if (!interaction.replied && !interaction.deferred) {
-        return interaction.reply({
+        await interaction.reply({
           content: "❌ Withdrawal system error.",
-          flags: MessageFlags.Ephemeral
+          ephemeral: true
         });
       }
     }
   },
 
-  // ====================================================
+  // ==========================================================
   // ALL WITHDRAW INTERACTIONS
-  // ====================================================
+  // ==========================================================
 
   async handleInteraction(interaction) {
     try {
-      // ==================================================
+
+      // ======================================================
       // RESOURCE SELECT MENU
-      // ==================================================
+      // ======================================================
 
       if (
         interaction.isStringSelectMenu() &&
@@ -176,16 +211,20 @@ module.exports = {
         if (!RESOURCES[resource]) {
           return interaction.reply({
             content: "❌ Invalid resource selected.",
-            flags: MessageFlags.Ephemeral
+            ephemeral: true
           });
         }
 
-        const config = RESOURCES[resource];
+        const data = RESOURCES[resource];
+
+        const modal = new ModalBuilder()
+          .setCustomId(`withdraw_modal_${resource}`)
+          .setTitle(`${data.emoji} Withdraw ${data.name}`);
 
         const amountInput = new TextInputBuilder()
           .setCustomId("withdraw_amount")
-          .setLabel(`Amount of ${config.name}`)
-          .setPlaceholder("Enter amount: 100 - 1000")
+          .setLabel("Resource Amount")
+          .setPlaceholder("Enter 100 - 1000")
           .setStyle(TextInputStyle.Short)
           .setRequired(true)
           .setMinLength(3)
@@ -197,325 +236,383 @@ module.exports = {
           .setPlaceholder("Enter your in-game nickname")
           .setStyle(TextInputStyle.Short)
           .setRequired(true)
-          .setMaxLength(50);
-
-        const modal = new ModalBuilder()
-          .setCustomId(`withdraw_modal_${resource}`)
-          .setTitle(`${config.emoji} Withdraw ${config.name}`);
+          .setMaxLength(100);
 
         modal.addComponents(
           new ActionRowBuilder().addComponents(amountInput),
           new ActionRowBuilder().addComponents(nicknameInput)
         );
 
-        return interaction.showModal(modal);
+        await interaction.showModal(modal);
+
+        return;
       }
 
-      // ==================================================
+      // ======================================================
       // WITHDRAW MODAL
-      // ==================================================
+      // ======================================================
 
       if (
         interaction.isModalSubmit() &&
         interaction.customId.startsWith("withdraw_modal_")
       ) {
-        const resource = interaction.customId.replace(
-          "withdraw_modal_",
-          ""
-        );
+        const resource =
+          interaction.customId.replace(
+            "withdraw_modal_",
+            ""
+          );
 
         if (!RESOURCES[resource]) {
           return interaction.reply({
             content: "❌ Invalid resource.",
-            flags: MessageFlags.Ephemeral
+            ephemeral: true
           });
         }
 
-        const config = RESOURCES[resource];
-
-        // Safely read modal fields
-        let amountText = "";
-        let nickname = "";
-
-        try {
-          amountText = interaction.fields.getTextInputValue(
+        const amountText =
+          interaction.fields.getTextInputValue(
             "withdraw_amount"
-          );
+          ).trim();
 
-          nickname = interaction.fields.getTextInputValue(
-            "game_nickname"
-          );
-        } catch (fieldError) {
-          console.error("Modal field error:", fieldError);
+        const nickname =
+          interaction.fields
+            .getTextInputValue("game_nickname")
+            .trim();
 
+        // ----------------------------------------------------
+        // VALIDATE AMOUNT
+        // ----------------------------------------------------
+
+        if (!/^\d+$/.test(amountText)) {
           return interaction.reply({
-            content: "❌ Could not read the withdrawal form.",
-            flags: MessageFlags.Ephemeral
+            content:
+              "❌ Amount must be a whole number.",
+            ephemeral: true
           });
         }
-
-        amountText = String(amountText || "").trim();
-        nickname = String(nickname || "").trim();
 
         const amount = Number(amountText);
 
-        // -----------------------------------------------
-        // AMOUNT VALIDATION
-        // -----------------------------------------------
-
-        if (!Number.isInteger(amount)) {
-          return interaction.reply({
-            content: "❌ Amount must be a whole number.",
-            flags: MessageFlags.Ephemeral
-          });
-        }
-
-        if (amount < MIN_AMOUNT) {
+        if (
+          !Number.isInteger(amount) ||
+          amount < MIN_AMOUNT ||
+          amount > MAX_AMOUNT
+        ) {
           return interaction.reply({
             content:
-              `❌ Minimum withdrawal is **${MIN_AMOUNT} ${config.name}**.`,
-            flags: MessageFlags.Ephemeral
-          });
-        }
-
-        if (amount > MAX_AMOUNT) {
-          return interaction.reply({
-            content:
-              `❌ Maximum withdrawal is **${MAX_AMOUNT} ${config.name}**.`,
-            flags: MessageFlags.Ephemeral
+              `❌ Invalid amount.\n\n` +
+              `Minimum: **${MIN_AMOUNT}**\n` +
+              `Maximum: **${MAX_AMOUNT}**`,
+            ephemeral: true
           });
         }
 
         if (!nickname) {
           return interaction.reply({
-            content: "❌ Please enter your in-game nickname.",
-            flags: MessageFlags.Ephemeral
-          });
-        }
-
-        // -----------------------------------------------
-        // CALCULATE COINS
-        // -----------------------------------------------
-
-        const coinCost = calculateCost(resource, amount);
-
-        if (coinCost === null) {
-          return interaction.reply({
-            content: "❌ Could not calculate withdrawal cost.",
-            flags: MessageFlags.Ephemeral
-          });
-        }
-
-        // -----------------------------------------------
-        // CHECK USER ACCOUNT
-        // -----------------------------------------------
-
-        const userResult = await pool.query(
-          `
-          SELECT coins
-          FROM users
-          WHERE discord_id = $1
-          `,
-          [interaction.user.id]
-        );
-
-        if (userResult.rows.length === 0) {
-          return interaction.reply({
             content:
-              "❌ You don't have a coin account yet.",
-            flags: MessageFlags.Ephemeral
+              "❌ Please enter your in-game nickname.",
+            ephemeral: true
           });
         }
 
-        const balance = Number(userResult.rows[0].coins);
+        // ----------------------------------------------------
+        // CALCULATE COST
+        // ----------------------------------------------------
 
-        if (balance < coinCost) {
-          return interaction.reply({
-            content:
-              `❌ Insufficient coins.\n\n` +
-              `💰 Required: **${coinCost.toLocaleString()} coins**\n` +
-              `💰 Your balance: **${balance.toLocaleString()} coins**`,
-            flags: MessageFlags.Ephemeral
-          });
-        }
+        const coinCost =
+          calculateCost(resource, amount);
 
-        // -----------------------------------------------
+        const resourceData =
+          RESOURCES[resource];
+
+        // ----------------------------------------------------
         // START TRANSACTION
-        // -----------------------------------------------
+        // ----------------------------------------------------
 
-        await pool.query("BEGIN");
+        const client = await pool.connect();
 
         try {
-          // Deduct coins safely
-          const updateResult = await pool.query(
+          await client.query("BEGIN");
+
+          // --------------------------------------------------
+          // LOCK USER ROW
+          // --------------------------------------------------
+
+          const userResult = await client.query(
+            `
+            SELECT coins
+            FROM users
+            WHERE discord_id = $1
+            FOR UPDATE
+            `,
+            [interaction.user.id]
+          );
+
+          if (userResult.rows.length === 0) {
+            await client.query("ROLLBACK");
+
+            return interaction.reply({
+              content:
+                "❌ You don't have a coin account yet.",
+              ephemeral: true
+            });
+          }
+
+          const balance =
+            Number(userResult.rows[0].coins);
+
+          // --------------------------------------------------
+          // CHECK BALANCE
+          // --------------------------------------------------
+
+          if (balance < coinCost) {
+            await client.query("ROLLBACK");
+
+            return interaction.reply({
+              content:
+                `❌ **Insufficient balance.**\n\n` +
+                `💰 Required: **${coinCost.toLocaleString()} coins**\n` +
+                `💰 Your balance: **${balance.toLocaleString()} coins**\n\n` +
+                `${resourceData.emoji} Resource: **${amount.toLocaleString()} ${resourceData.name}**`,
+              ephemeral: true
+            });
+          }
+
+          // --------------------------------------------------
+          // DEDUCT COINS
+          // --------------------------------------------------
+
+          const updateResult = await client.query(
             `
             UPDATE users
-            SET coins = coins - $1
+            SET
+              coins = coins - $1,
+              total_spent = total_spent + $1
             WHERE discord_id = $2
               AND coins >= $1
             RETURNING coins
             `,
-            [coinCost, interaction.user.id]
-          );
-
-          if (updateResult.rows.length === 0) {
-            await pool.query("ROLLBACK");
-
-            return interaction.reply({
-              content:
-                "❌ Your coin balance changed. Please try again.",
-              flags: MessageFlags.Ephemeral
-            });
-          }
-
-          // Create withdrawal request
-          const withdrawalResult = await pool.query(
-            `
-            INSERT INTO withdrawals
-              (
-                discord_id,
-                resource,
-                amount,
-                coin_cost,
-                nickname,
-                status
-              )
-            VALUES
-              ($1, $2, $3, $4, $5, 'pending')
-            RETURNING id
-            `,
             [
-              interaction.user.id,
-              resource,
-              amount,
               coinCost,
-              nickname
+              interaction.user.id
             ]
           );
 
-          await pool.query("COMMIT");
+          if (updateResult.rows.length === 0) {
+            await client.query("ROLLBACK");
+
+            return interaction.reply({
+              content:
+                "❌ Your balance changed. Please try again.",
+              ephemeral: true
+            });
+          }
+
+          // --------------------------------------------------
+          // CREATE WITHDRAWAL
+          // --------------------------------------------------
+
+          const withdrawalResult =
+            await client.query(
+              `
+              INSERT INTO withdrawals
+                (
+                  discord_id,
+                  resource,
+                  amount,
+                  nickname,
+                  coin_cost,
+                  status
+                )
+              VALUES
+                ($1, $2, $3, $4, $5, 'pending')
+              RETURNING id
+              `,
+              [
+                interaction.user.id,
+                resource,
+                amount,
+                nickname,
+                coinCost
+              ]
+            );
 
           const withdrawalId =
             withdrawalResult.rows[0].id;
 
-          // ---------------------------------------------
+          // --------------------------------------------------
+          // TRANSACTION LOG
+          // --------------------------------------------------
+
+          await client.query(
+            `
+            INSERT INTO transactions
+              (
+                discord_id,
+                type,
+                amount,
+                reason,
+                request_id
+              )
+            VALUES
+              (
+                $1,
+                'WITHDRAW',
+                $2,
+                $3,
+                $4
+              )
+            `,
+            [
+              interaction.user.id,
+              coinCost,
+              `${resourceData.name} withdrawal: ${amount}`,
+              withdrawalId
+            ]
+          );
+
+          await client.query("COMMIT");
+
+          client.release();
+
+          // --------------------------------------------------
           // ADMIN EMBED
-          // ---------------------------------------------
+          // --------------------------------------------------
 
-          const embed = new EmbedBuilder()
-            .setTitle("💸 New Withdrawal Request")
-            .setColor(0xfee75c)
-            .addFields(
-              {
-                name: "👤 Player",
-                value: `<@${interaction.user.id}>`,
-                inline: true
-              },
-              {
-                name: "🎁 Resource",
-                value:
-                  `${config.emoji} ${config.name}`,
-                inline: true
-              },
-              {
-                name: "📦 Amount",
-                value:
-                  `${amount.toLocaleString()} ${config.name}`,
-                inline: true
-              },
-              {
-                name: "💰 Coins",
-                value:
-                  `${coinCost.toLocaleString()} coins`,
-                inline: true
-              },
-              {
-                name: "🎮 In-Game Nickname",
-                value: nickname,
-                inline: false
-              },
-              {
-                name: "🆔 Withdrawal ID",
-                value: `#${withdrawalId}`,
-                inline: true
-              },
-              {
-                name: "📌 Status",
-                value: "⏳ Pending",
-                inline: true
-              }
-            )
-            .setTimestamp();
+          const embed =
+            new EmbedBuilder()
+              .setTitle("💸 New Withdrawal Request")
+              .setColor(0xF1C40F)
+              .addFields(
+                {
+                  name: "👤 Player",
+                  value:
+                    `<@${interaction.user.id}>`,
+                  inline: true
+                },
+                {
+                  name: "📦 Resource",
+                  value:
+                    `${resourceData.emoji} ${resourceData.name}`,
+                  inline: true
+                },
+                {
+                  name: "📦 Amount",
+                  value:
+                    `${amount.toLocaleString()} ${resourceData.name}`,
+                  inline: true
+                },
+                {
+                  name: "💰 Coin Cost",
+                  value:
+                    `${coinCost.toLocaleString()} coins`,
+                  inline: true
+                },
+                {
+                  name: "🎮 In-Game Nickname",
+                  value: nickname,
+                  inline: false
+                },
+                {
+                  name: "🆔 Withdrawal ID",
+                  value: `#${withdrawalId}`,
+                  inline: true
+                },
+                {
+                  name: "📌 Status",
+                  value: "⏳ Pending",
+                  inline: true
+                }
+              )
+              .setTimestamp();
 
-          const approveButton = new ButtonBuilder()
-            .setCustomId(
-              `withdraw_approve_${withdrawalId}`
-            )
-            .setLabel("Approve")
-            .setEmoji("✅")
-            .setStyle(ButtonStyle.Success);
+          const approveButton =
+            new ButtonBuilder()
+              .setCustomId(
+                `withdraw_approve_${withdrawalId}`
+              )
+              .setLabel("Approve")
+              .setEmoji("✅")
+              .setStyle(ButtonStyle.Success);
 
-          const rejectButton = new ButtonBuilder()
-            .setCustomId(
-              `withdraw_reject_${withdrawalId}`
-            )
-            .setLabel("Reject")
-            .setEmoji("❌")
-            .setStyle(ButtonStyle.Danger);
+          const rejectButton =
+            new ButtonBuilder()
+              .setCustomId(
+                `withdraw_reject_${withdrawalId}`
+              )
+              .setLabel("Reject")
+              .setEmoji("❌")
+              .setStyle(ButtonStyle.Danger);
 
-          const buttons = new ActionRowBuilder()
-            .addComponents(
-              approveButton,
-              rejectButton
-            );
+          const buttons =
+            new ActionRowBuilder()
+              .addComponents(
+                approveButton,
+                rejectButton
+              );
 
-          // ---------------------------------------------
+          // --------------------------------------------------
           // SEND TO ADMIN
-          // ---------------------------------------------
+          // --------------------------------------------------
 
-          const adminId = process.env.ADMIN_ID;
+          const adminId =
+            process.env.ADMIN_ID;
 
           if (adminId) {
             try {
               const adminUser =
-                await interaction.client.users.fetch(adminId);
+                await interaction.client.users.fetch(
+                  adminId
+                );
 
               await adminUser.send({
                 embeds: [embed],
                 components: [buttons]
               });
-            } catch (adminError) {
+
+            } catch (dmError) {
               console.error(
-                "Could not send withdrawal to admin:",
-                adminError
+                "❌ Could not send withdrawal to admin:",
+                dmError
               );
             }
           }
 
-          // ---------------------------------------------
+          // --------------------------------------------------
           // PLAYER RESPONSE
-          // ---------------------------------------------
+          // --------------------------------------------------
 
           return interaction.reply({
             content:
               `✅ **Withdrawal request submitted!**\n\n` +
-              `${config.emoji} Resource: **${config.name}**\n` +
-              `📦 Amount: **${amount.toLocaleString()}**\n` +
+              `${resourceData.emoji} Resource: **${amount.toLocaleString()} ${resourceData.name}**\n` +
               `💰 Cost: **${coinCost.toLocaleString()} coins**\n` +
               `🎮 Nickname: **${nickname}**\n` +
               `🆔 Request ID: **#${withdrawalId}**\n\n` +
               `⏳ Waiting for admin approval.`,
-            flags: MessageFlags.Ephemeral
+            ephemeral: true
           });
-        } catch (transactionError) {
-          await pool.query("ROLLBACK");
-          throw transactionError;
+
+        } catch (error) {
+
+          try {
+            await client.query("ROLLBACK");
+          } catch (rollbackError) {
+            console.error(
+              "Rollback error:",
+              rollbackError
+            );
+          }
+
+          client.release();
+
+          throw error;
         }
       }
 
-      // ==================================================
-      // APPROVE BUTTON
-      // ==================================================
+      // ======================================================
+      // APPROVE
+      // ======================================================
 
       if (
         interaction.isButton() &&
@@ -523,7 +620,8 @@ module.exports = {
           "withdraw_approve_"
         )
       ) {
-        const adminId = process.env.ADMIN_ID;
+        const adminId =
+          process.env.ADMIN_ID;
 
         if (
           adminId &&
@@ -532,7 +630,7 @@ module.exports = {
           return interaction.reply({
             content:
               "❌ You are not allowed to approve withdrawals.",
-            flags: MessageFlags.Ephemeral
+            ephemeral: true
           });
         }
 
@@ -542,129 +640,174 @@ module.exports = {
             ""
           );
 
-        const result = await pool.query(
-          `
-          SELECT *
-          FROM withdrawals
-          WHERE id = $1
-          `,
-          [withdrawalId]
-        );
+        const client = await pool.connect();
 
-        if (result.rows.length === 0) {
-          return interaction.reply({
-            content:
-              "❌ Withdrawal request not found.",
-            flags: MessageFlags.Ephemeral
-          });
-        }
-
-        const withdrawal = result.rows[0];
-
-        if (withdrawal.status !== "pending") {
-          return interaction.reply({
-            content:
-              `❌ This withdrawal is already **${withdrawal.status}**.`,
-            flags: MessageFlags.Ephemeral
-          });
-        }
-
-        await pool.query(
-          `
-          UPDATE withdrawals
-          SET status = 'approved'
-          WHERE id = $1
-          `,
-          [withdrawalId]
-        );
-
-        const resource =
-          RESOURCES[withdrawal.resource] ||
-          RESOURCES.iron;
-
-        const approvedEmbed = new EmbedBuilder()
-          .setTitle("✅ Withdrawal Approved")
-          .setColor(0x57f287)
-          .addFields(
-            {
-              name: "👤 Player",
-              value: `<@${withdrawal.discord_id}>`,
-              inline: true
-            },
-            {
-              name: "🎁 Resource",
-              value:
-                `${resource.emoji} ${resource.name}`,
-              inline: true
-            },
-            {
-              name: "📦 Amount",
-              value:
-                `${Number(
-                  withdrawal.amount
-                ).toLocaleString()} ${resource.name}`,
-              inline: true
-            },
-            {
-              name: "💰 Coins",
-              value:
-                `${Number(
-                  withdrawal.coin_cost
-                ).toLocaleString()} coins`,
-              inline: true
-            },
-            {
-              name: "🎮 In-Game Nickname",
-              value: withdrawal.nickname,
-              inline: false
-            },
-            {
-              name: "🆔 Request ID",
-              value: `#${withdrawal.id}`,
-              inline: true
-            },
-            {
-              name: "📌 Status",
-              value: "✅ Approved",
-              inline: true
-            }
-          )
-          .setTimestamp();
-
-        await interaction.update({
-          embeds: [approvedEmbed],
-          components: []
-        });
-
-        // DM PLAYER
         try {
-          const player =
-            await interaction.client.users.fetch(
-              withdrawal.discord_id
+          await client.query("BEGIN");
+
+          const result =
+            await client.query(
+              `
+              SELECT *
+              FROM withdrawals
+              WHERE id = $1
+              FOR UPDATE
+              `,
+              [withdrawalId]
             );
 
-          await player.send(
-            `✅ **Your withdrawal has been approved!**\n\n` +
-            `${resource.emoji} Resource: **${resource.name}**\n` +
-            `📦 Amount: **${Number(
-              withdrawal.amount
-            ).toLocaleString()}**\n` +
-            `🎮 Nickname: **${withdrawal.nickname}**\n` +
-            `🆔 Request ID: **#${withdrawal.id}**`
-          );
-        } catch (dmError) {
-          console.error(
-            "Could not DM player:",
-            dmError
-          );
-        }
+          if (result.rows.length === 0) {
+            await client.query("ROLLBACK");
+            client.release();
 
-        return;
+            return interaction.reply({
+              content:
+                "❌ Withdrawal request not found.",
+              ephemeral: true
+            });
+          }
+
+          const withdrawal =
+            result.rows[0];
+
+          if (
+            withdrawal.status !== "pending"
+          ) {
+            await client.query("ROLLBACK");
+            client.release();
+
+            return interaction.reply({
+              content:
+                `❌ This withdrawal is already **${withdrawal.status}**.`,
+              ephemeral: true
+            });
+          }
+
+          await client.query(
+            `
+            UPDATE withdrawals
+            SET
+              status = 'approved',
+              approved_at = CURRENT_TIMESTAMP,
+              approved_by = $1
+            WHERE id = $2
+            `,
+            [
+              interaction.user.id,
+              withdrawalId
+            ]
+          );
+
+          await client.query("COMMIT");
+          client.release();
+
+          const resourceData =
+            RESOURCES[withdrawal.resource] || {
+              name: withdrawal.resource,
+              emoji: "📦"
+            };
+
+          const approvedEmbed =
+            new EmbedBuilder()
+              .setTitle("✅ Withdrawal Approved")
+              .setColor(0x2ECC71)
+              .addFields(
+                {
+                  name: "👤 Player",
+                  value:
+                    `<@${withdrawal.discord_id}>`,
+                  inline: true
+                },
+                {
+                  name: "📦 Resource",
+                  value:
+                    `${resourceData.emoji} ${resourceData.name}`,
+                  inline: true
+                },
+                {
+                  name: "📦 Amount",
+                  value:
+                    `${Number(withdrawal.amount).toLocaleString()} ${resourceData.name}`,
+                  inline: true
+                },
+                {
+                  name: "💰 Coins",
+                  value:
+                    `${Number(withdrawal.coin_cost).toLocaleString()} coins`,
+                  inline: true
+                },
+                {
+                  name: "🎮 In-Game Nickname",
+                  value:
+                    withdrawal.nickname,
+                  inline: false
+                },
+                {
+                  name: "🆔 Request ID",
+                  value:
+                    `#${withdrawal.id}`,
+                  inline: true
+                },
+                {
+                  name: "📌 Status",
+                  value:
+                    "✅ Approved",
+                  inline: true
+                }
+              )
+              .setTimestamp();
+
+          await interaction.update({
+            embeds: [approvedEmbed],
+            components: []
+          });
+
+          // --------------------------------------------------
+          // PLAYER DM
+          // --------------------------------------------------
+
+          try {
+            const player =
+              await interaction.client.users.fetch(
+                withdrawal.discord_id
+              );
+
+            await player.send(
+              `✅ **Your withdrawal has been approved!**\n\n` +
+              `${resourceData.emoji} Resource: **${Number(withdrawal.amount).toLocaleString()} ${resourceData.name}**\n` +
+              `💰 Cost: **${Number(withdrawal.coin_cost).toLocaleString()} coins**\n` +
+              `🎮 Nickname: **${withdrawal.nickname}**\n` +
+              `🆔 Request ID: **#${withdrawal.id}**`
+            );
+
+          } catch (dmError) {
+            console.error(
+              "❌ Could not DM player:",
+              dmError
+            );
+          }
+
+          return;
+        } catch (error) {
+
+          try {
+            await client.query("ROLLBACK");
+          } catch (rollbackError) {
+            console.error(
+              "Rollback error:",
+              rollbackError
+            );
+          }
+
+          client.release();
+
+          throw error;
+        }
       }
 
-      // ==================================================
-      // REJECT BUTTON
-      // ==================================================
+      // ======================================================
+      // REJECT
+      // ======================================================
 
       if (
         interaction.isButton() &&
@@ -672,7 +815,8 @@ module.exports = {
           "withdraw_reject_"
         )
       ) {
-        const adminId = process.env.ADMIN_ID;
+        const adminId =
+          process.env.ADMIN_ID;
 
         if (
           adminId &&
@@ -681,7 +825,7 @@ module.exports = {
           return interaction.reply({
             content:
               "❌ You are not allowed to reject withdrawals.",
-            flags: MessageFlags.Ephemeral
+            ephemeral: true
           });
         }
 
@@ -691,62 +835,71 @@ module.exports = {
             ""
           );
 
-        await pool.query("BEGIN");
+        const client = await pool.connect();
 
         try {
-          const result = await pool.query(
-            `
-            SELECT *
-            FROM withdrawals
-            WHERE id = $1
-            FOR UPDATE
-            `,
-            [withdrawalId]
-          );
+          await client.query("BEGIN");
+
+          const result =
+            await client.query(
+              `
+              SELECT *
+              FROM withdrawals
+              WHERE id = $1
+              FOR UPDATE
+              `,
+              [withdrawalId]
+            );
 
           if (result.rows.length === 0) {
-            await pool.query("ROLLBACK");
+            await client.query("ROLLBACK");
+            client.release();
 
             return interaction.reply({
               content:
                 "❌ Withdrawal request not found.",
-              flags: MessageFlags.Ephemeral
+              ephemeral: true
             });
           }
 
-          const withdrawal = result.rows[0];
+          const withdrawal =
+            result.rows[0];
 
-          if (withdrawal.status !== "pending") {
-            await pool.query("ROLLBACK");
+          if (
+            withdrawal.status !== "pending"
+          ) {
+            await client.query("ROLLBACK");
+            client.release();
 
             return interaction.reply({
               content:
                 `❌ This withdrawal is already **${withdrawal.status}**.`,
-              flags: MessageFlags.Ephemeral
+              ephemeral: true
             });
           }
 
+          // --------------------------------------------------
           // REFUND COINS
-await pool.query(
-  `UPDATE users
-   SET coins = coins + $1
-   WHERE discord_id = $2`,
-  [
-    Number(withdrawal.coin_cost),
-    withdrawal.discord_id
-  ]
-);
+          // --------------------------------------------------
 
-// UPDATE STATUS
-await pool.query(
-  `UPDATE withdrawals
-   SET status = 'rejected'
-   WHERE id = $1`,
-  [withdrawalId]
-);
+          await client.query(
+            `
+            UPDATE users
+            SET coins = coins + $1
+            WHERE discord_id = $2
+            `,
+            [
+              Number(withdrawal.coin_cost),
+              withdrawal.discord_id
+            ]
+          );
 
-await pool.query("COMMIT");
-          
+          // --------------------------------------------------
+          // UPDATE WITHDRAWAL
+          // --------------------------------------------------
+
+          await client.query(
+            `
             UPDATE withdrawals
             SET status = 'rejected'
             WHERE id = $1
@@ -754,68 +907,104 @@ await pool.query("COMMIT");
             [withdrawalId]
           );
 
-          await pool.query("COMMIT");
+          // --------------------------------------------------
+          // REFUND TRANSACTION LOG
+          // --------------------------------------------------
 
-          const resource =
-            RESOURCES[withdrawal.resource] ||
-            RESOURCES.iron;
+          await client.query(
+            `
+            INSERT INTO transactions
+              (
+                discord_id,
+                type,
+                amount,
+                reason,
+                request_id
+              )
+            VALUES
+              (
+                $1,
+                'REFUND',
+                $2,
+                'Withdrawal rejected - coins refunded',
+                $3
+              )
+            `,
+            [
+              withdrawal.discord_id,
+              Number(withdrawal.coin_cost),
+              withdrawalId
+            ]
+          );
 
-          const rejectedEmbed = new EmbedBuilder()
-            .setTitle("❌ Withdrawal Rejected")
-            .setColor(0xed4245)
-            .addFields(
-              {
-                name: "👤 Player",
-                value: `<@${withdrawal.discord_id}>`,
-                inline: true
-              },
-              {
-                name: "🎁 Resource",
-                value:
-                  `${resource.emoji} ${resource.name}`,
-                inline: true
-              },
-              {
-                name: "📦 Amount",
-                value:
-                  `${Number(
-                    withdrawal.amount
-                  ).toLocaleString()} ${resource.name}`,
-                inline: true
-              },
-              {
-                name: "💰 Refunded",
-                value:
-                  `${Number(
-                    withdrawal.coin_cost
-                  ).toLocaleString()} coins`,
-                inline: true
-              },
-              {
-                name: "🎮 In-Game Nickname",
-                value: withdrawal.nickname,
-                inline: false
-              },
-              {
-                name: "🆔 Request ID",
-                value: `#${withdrawal.id}`,
-                inline: true
-              },
-              {
-                name: "📌 Status",
-                value:
-                  "❌ Rejected — Coins Refunded",
-                inline: false
-              }
-            )
-            .setTimestamp();
+          await client.query("COMMIT");
+          client.release();
+
+          const resourceData =
+            RESOURCES[withdrawal.resource] || {
+              name: withdrawal.resource,
+              emoji: "📦"
+            };
+
+          const rejectedEmbed =
+            new EmbedBuilder()
+              .setTitle("❌ Withdrawal Rejected")
+              .setColor(0xE74C3C)
+              .addFields(
+                {
+                  name: "👤 Player",
+                  value:
+                    `<@${withdrawal.discord_id}>`,
+                  inline: true
+                },
+                {
+                  name: "📦 Resource",
+                  value:
+                    `${resourceData.emoji} ${resourceData.name}`,
+                  inline: true
+                },
+                {
+                  name: "📦 Amount",
+                  value:
+                    `${Number(withdrawal.amount).toLocaleString()} ${resourceData.name}`,
+                  inline: true
+                },
+                {
+                  name: "💰 Refunded",
+                  value:
+                    `${Number(withdrawal.coin_cost).toLocaleString()} coins`,
+                  inline: true
+                },
+                {
+                  name: "🎮 In-Game Nickname",
+                  value:
+                    withdrawal.nickname,
+                  inline: false
+                },
+                {
+                  name: "🆔 Request ID",
+                  value:
+                    `#${withdrawal.id}`,
+                  inline: true
+                },
+                {
+                  name: "📌 Status",
+                  value:
+                    "❌ Rejected — Coins Refunded",
+                  inline: false
+                }
+              )
+              .setTimestamp();
 
           await interaction.update({
             embeds: [rejectedEmbed],
             components: []
           });
 
-          // DM PLAYER
+          // --------------------------------------------------
+          // PLAYER DM
+          // --------------------------------------------------
+
           try {
             const player =
               await interaction.client.users.fetch(
@@ -824,45 +1013,57 @@ await pool.query("COMMIT");
 
             await player.send(
               `❌ **Your withdrawal was rejected.**\n\n` +
-              `🎁 Resource: **${resource.name}**\n` +
-              `📦 Amount: **${Number(
-                withdrawal.amount
-              ).toLocaleString()}**\n` +
-              `💰 Refunded: **${Number(
-                withdrawal.coin_cost
-              ).toLocaleString()} coins**\n` +
+              `${resourceData.emoji} Resource: **${Number(withdrawal.amount).toLocaleString()} ${resourceData.name}**\n` +
+              `💰 Refunded: **${Number(withdrawal.coin_cost).toLocaleString()} coins**\n` +
               `🎮 Nickname: **${withdrawal.nickname}**\n` +
               `🆔 Request ID: **#${withdrawal.id}**`
             );
+
           } catch (dmError) {
             console.error(
-              "Could not DM player:",
+              "❌ Could not DM player:",
               dmError
             );
           }
 
           return;
-        } catch (rejectError) {
-          await pool.query("ROLLBACK");
-          throw rejectError;
+
+        } catch (error) {
+
+          try {
+            await client.query("ROLLBACK");
+          } catch (rollbackError) {
+            console.error(
+              "Rollback error:",
+              rollbackError
+            );
+          }
+
+          client.release();
+
+          throw error;
         }
       }
+
     } catch (error) {
+
       console.error(
-        "Withdrawal interaction error:",
-        error
+        "❌ Withdrawal interaction error:"
       );
+
+      console.error(error);
 
       if (
         !interaction.replied &&
         !interaction.deferred
       ) {
-        return interaction.reply({
+        await interaction.reply({
           content:
-            "❌ Something went wrong while processing the withdrawal.",
-          flags: MessageFlags.Ephemeral
+            "❌ Something went wrong while processing withdrawal.",
+          ephemeral: true
         });
       }
     }
   }
 };
+            
