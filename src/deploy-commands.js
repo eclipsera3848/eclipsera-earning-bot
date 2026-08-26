@@ -2,19 +2,12 @@ require("dotenv").config();
 
 const { REST, Routes } = require("discord.js");
 
-// =========================
-// COMMANDS
-// =========================
-
+// Commands
 const balanceCommand = require("./commands/balance");
 const withdrawCommand = require("./withdraw");
 const leaderboardCommand = require("./leaderboard");
 const approveCommand = require("./approve");
 const rejectCommand = require("./reject");
-
-// =========================
-// CHECK ENV
-// =========================
 
 if (!process.env.DISCORD_TOKEN) {
   console.error("❌ DISCORD_TOKEN is missing!");
@@ -31,10 +24,6 @@ if (!process.env.GUILD_ID) {
   process.exit(1);
 }
 
-// =========================
-// ALL COMMANDS
-// =========================
-
 const commands = [
   balanceCommand,
   withdrawCommand,
@@ -43,13 +32,13 @@ const commands = [
   rejectCommand
 ];
 
-// =========================
-// CONVERT COMMAND DATA
-// =========================
+const commandData = commands.map((command, index) => {
+  if (!command) {
+    throw new Error(`❌ Command ${index + 1} is undefined.`);
+  }
 
-const commandData = commands.map((command) => {
-  if (!command || !command.data) {
-    throw new Error("❌ A command is missing its data property.");
+  if (!command.data) {
+    throw new Error(`❌ Command ${index + 1} has no data.`);
   }
 
   // SlashCommandBuilder
@@ -57,13 +46,29 @@ const commandData = commands.map((command) => {
     return command.data.toJSON();
   }
 
-  // Already plain JSON object
-  return command.data;
+  // Plain object
+  if (
+    typeof command.data.name === "string" &&
+    typeof command.data.description === "string"
+  ) {
+    return command.data;
+  }
+
+  throw new Error(
+    `❌ Invalid command data at index ${index + 1}. ` +
+    `Every command needs name + description.`
+  );
 });
 
-// =========================
-// DEPLOY
-// =========================
+console.log("=================================");
+console.log("📋 Commands to register:");
+console.log("=================================");
+
+for (const command of commandData) {
+  console.log(`✅ /${command.name} - ${command.description}`);
+}
+
+console.log("=================================");
 
 const rest = new REST({
   version: "10"
@@ -71,9 +76,7 @@ const rest = new REST({
 
 (async () => {
   try {
-    console.log("=================================");
     console.log("🔄 Registering Discord commands...");
-    console.log("=================================");
 
     await rest.put(
       Routes.applicationGuildCommands(
@@ -88,10 +91,6 @@ const rest = new REST({
     console.log("=================================");
     console.log("✅ ALL COMMANDS REGISTERED!");
     console.log("=================================");
-
-    commandData.forEach((command) => {
-      console.log(`✅ /${command.name}`);
-    });
 
   } catch (error) {
     console.error("=================================");
