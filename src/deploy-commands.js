@@ -5,14 +5,21 @@ const {
   Routes
 } = require("discord.js");
 
+// Player commands
 const balanceCommand = require("./commands/balance");
-const withdrawCommand = require("./commands/withdraw");
-const leaderboardCommand = require("./commands/leaderboard");
+const withdrawCommand = require("./withdraw");
+const leaderboardCommand = require("./leaderboard");
+
+// Admin commands
+const approveCommand = require("./approve");
+const rejectCommand = require("./reject");
 
 const commands = [
   balanceCommand.data.toJSON(),
   withdrawCommand.data.toJSON(),
-  leaderboardCommand.data.toJSON()
+  leaderboardCommand.data.toJSON(),
+  approveCommand.data.toJSON(),
+  rejectCommand.data.toJSON()
 ];
 
 const rest = new REST({
@@ -33,7 +40,14 @@ async function deployCommands() {
       }
     );
 
-    console.log("✅ Slash commands registered successfully!");
+    console.log("✅ All slash commands registered!");
+    console.log("📋 Commands:");
+    console.log("• /balance");
+    console.log("• /withdraw");
+    console.log("• /leaderboard");
+    console.log("• /approve");
+    console.log("• /reject");
+
   } catch (error) {
     console.error("❌ Failed to register commands:");
     console.error(error);
