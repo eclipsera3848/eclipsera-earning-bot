@@ -638,19 +638,6 @@ if (!adminId || interaction.user.id !== adminId) {
     ephemeral: true
   });
 }
-        const adminId =
-          process.env.ADMIN_ID;
-
-        if (
-          adminId &&
-          interaction.user.id !== adminId
-        ) {
-          return interaction.reply({
-            content:
-              "❌ You are not allowed to approve withdrawals.",
-            ephemeral: true
-          });
-        }
 
         const withdrawalId =
           interaction.customId.replace(
