@@ -9,7 +9,7 @@ const {
   ButtonStyle
 } = require("discord.js");
 
-const { pool } = require("./database");
+const { pool } = require("./database/database");
 
 module.exports = {
   data: new SlashCommandBuilder()
