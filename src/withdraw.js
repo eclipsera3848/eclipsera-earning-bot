@@ -1052,25 +1052,7 @@ if (!adminId || interaction.user.id !== adminId) {
         }
       }
 
-    } catch (error) {
-
-      console.error(
-        "❌ Withdrawal interaction error:"
-      );
-
-      console.error(error);
-
-      if (
-        !interaction.replied &&
-        !interaction.deferred
-      ) {
-        await interaction.reply({
-          content:
-            "❌ Something went wrong while processing withdrawal.",
-          ephemeral: true
-        });
-      }
-    }
+    
   }
 };
             
