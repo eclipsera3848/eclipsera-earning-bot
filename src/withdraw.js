@@ -829,13 +829,6 @@ if (
     "withdraw_reject_",
     ""
   );
-
-        const withdrawalId =
-          interaction.customId.replace(
-            "withdraw_reject_",
-            ""
-          );
-
         const client = await pool.connect();
 
         try {
