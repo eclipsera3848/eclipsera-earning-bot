@@ -28,6 +28,20 @@ module.exports = {
       { name: "🍞 Bread", value: "bread" }
     )
 )
+addIntegerOption(option =>
+    option
+      .setName("amount")
+      .setDescription("Amount to withdraw")
+      .setRequired(true)
+      .setMinValue(1)
+  )
+
+  .addStringOption(option =>
+    option
+      .setName("nickname")
+      .setDescription("Your in-game nickname")
+      .setRequired(true)
+  ),
 
   async execute(interaction) {
     try {
