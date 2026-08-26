@@ -47,11 +47,13 @@ const commandData = commands.map((command, index) => {
   }
 
   // Plain object
-  if (
-    typeof command.data.name === "string" &&
-    typeof command.data.description === "string"
-  ) {
-    return command.data;
+  if (typeof command.data.name === "string") {
+  return {
+    ...command.data,
+    description:
+      command.data.description ||
+      `Handle ${command.data.name} command`
+  };
   }
 
   throw new Error(
