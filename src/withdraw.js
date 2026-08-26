@@ -749,6 +749,15 @@ module.exports = {
           );
 
           await pool.query("COMMIT");
+          
+            UPDATE withdrawals
+            SET status = 'rejected'
+            WHERE id = $1
+            `,
+            [withdrawalId]
+          );
+
+          await pool.query("COMMIT");
 
           const resource =
             RESOURCES[withdrawal.resource] ||
