@@ -628,13 +628,14 @@ return interaction.reply({
   interaction.isButton() &&
   interaction.customId.startsWith("withdraw_approve_")
 ) {
-  const adminId = process.env.ADMIN_ID;
+ const adminUserIds = (process.env.ADMIN_USER_IDS || "")
+  .split(",")
+  .map(id => id.trim())
+  .filter(Boolean);
 
-  const adminUserId = process.env.ADMIN_USER_ID;
-
-if (interaction.user.id !== adminUserId) {
+if (!adminUserIds.includes(interaction.user.id)) {
   return interaction.reply({
-    content: "❌ Only administrator can do this.",
+    content: "❌ Only authorized administrators can do this.",
     ephemeral: true
   });
 }
