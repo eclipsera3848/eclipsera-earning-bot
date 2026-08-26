@@ -560,17 +560,26 @@ module.exports = {
 // ==========================================
 
 try {
-  await interaction.channel.send({
-    content:
-      `🚨 **NEW WITHDRAWAL REQUEST**\n` +
-      `<@${interaction.user.id}> has requested a withdrawal.`,
-    embeds: [embed],
-    components: [buttons]
-  });
+  // Send the withdrawal request publicly in the channel
+await interaction.channel.send({
+  content:
+    `🚨 **NEW WITHDRAWAL REQUEST**\n` +
+    `<@${interaction.user.id}> has requested a withdrawal.`,
+  embeds: [embed],
+  components: [buttons]
+});
 
-  console.log(
-    `✅ Withdrawal #${withdrawalId} sent to channel.`
-  );
+// Private confirmation for the player
+return interaction.reply({
+  content:
+    `✅ **Withdrawal request submitted!**\n\n` +
+    `${resourceData.emoji} Resource: **${amount.toLocaleString()} ${resourceData.name}**\n` +
+    `💰 Cost: **${coinCost.toLocaleString()} coins**\n` +
+    `🎮 Nickname: **${nickname}**\n` +
+    `🆔 Request ID: **#${withdrawalId}**\n\n` +
+    `⏳ Waiting for approval.`,
+  ephemeral: true
+});
 
 } catch (channelError) {
   console.error(
@@ -592,7 +601,6 @@ try {
               `🎮 Nickname: **${nickname}**\n` +
               `🆔 Request ID: **#${withdrawalId}**\n\n` +
               `⏳ Waiting for admin approval.`,
-            ephemeral: true
           });
 
         } catch (error) {
