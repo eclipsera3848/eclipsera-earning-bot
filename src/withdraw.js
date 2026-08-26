@@ -555,28 +555,30 @@ module.exports = {
           // SEND TO ADMIN
           // --------------------------------------------------
 
-          const adminId =
-            process.env.ADMIN_ID;
+          // ==========================================
+// SEND REQUEST IN CHANNEL
+// ==========================================
 
-          if (adminId) {
-            try {
-              const adminUser =
-                await interaction.client.users.fetch(
-                  adminId
-                );
+try {
+  await interaction.channel.send({
+    content:
+      `🚨 **NEW WITHDRAWAL REQUEST**\n` +
+      `<@${interaction.user.id}> has requested a withdrawal.`,
+    embeds: [embed],
+    components: [buttons]
+  });
 
-              await adminUser.send({
-                embeds: [embed],
-                components: [buttons]
-              });
+  console.log(
+    `✅ Withdrawal #${withdrawalId} sent to channel.`
+  );
 
-            } catch (dmError) {
-              console.error(
-                "❌ Could not send withdrawal to admin:",
-                dmError
-              );
-            }
-          }
+} catch (channelError) {
+  console.error(
+    "❌ Could not send withdrawal request to channel:"
+  );
+
+  console.error(channelError);
+}
 
           // --------------------------------------------------
           // PLAYER RESPONSE
