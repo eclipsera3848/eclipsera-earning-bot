@@ -630,6 +630,14 @@ return interaction.reply({
           "withdraw_approve_"
         )
       ) {
+        const adminId = process.env.ADMIN_ID;
+
+if (!adminId || interaction.user.id !== adminId) {
+  return interaction.reply({
+    content: "❌ Only the bot administrator can approve withdrawals.",
+    ephemeral: true
+  });
+}
         const adminId =
           process.env.ADMIN_ID;
 
@@ -829,15 +837,17 @@ return interaction.reply({
           process.env.ADMIN_ID;
 
         if (
-          adminId &&
-          interaction.user.id !== adminId
-        ) {
-          return interaction.reply({
-            content:
-              "❌ You are not allowed to reject withdrawals.",
-            ephemeral: true
-          });
-        }
+  interaction.isButton() &&
+  interaction.customId.startsWith("withdraw_reject_")
+) {
+  const adminId = process.env.ADMIN_ID;
+
+  if (!adminId || interaction.user.id !== adminId) {
+    return interaction.reply({
+      content: "❌ Only the bot administrator can reject withdrawals.",
+      ephemeral: true
+    });
+  }
 
         const withdrawalId =
           interaction.customId.replace(
