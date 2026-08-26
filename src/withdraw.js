@@ -630,12 +630,14 @@ return interaction.reply({
 ) {
   const adminId = process.env.ADMIN_ID;
 
-  if (!adminId || interaction.user.id !== adminId) {
-    return interaction.reply({
-      content: "❌ Only the bot administrator can approve withdrawals.",
-      ephemeral: true
-    });
-  }
+  const adminUserId = process.env.ADMIN_USER_ID;
+
+if (interaction.user.id !== adminUserId) {
+  return interaction.reply({
+    content: "❌ Only administrator can do this.",
+    ephemeral: true
+  });
+}
 
         const withdrawalId =
           interaction.customId.replace(
