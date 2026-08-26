@@ -1018,8 +1018,6 @@ if (
     "❌ Could not DM player:",
     dmError
   );
-}
-
 return;
 
         } catch (error) {
