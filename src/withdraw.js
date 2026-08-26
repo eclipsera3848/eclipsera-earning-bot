@@ -727,28 +727,25 @@ module.exports = {
           }
 
           // REFUND COINS
-          await pool.query(
-         UPDATE users
-            SET coins = coins + $1
-            WHERE discord_id = $2
-            `,
-            [
-              Number(withdrawal.coin_cost),
-              withdrawal.discord_id
-            ]
-          );
+await pool.query(
+  `UPDATE users
+   SET coins = coins + $1
+   WHERE discord_id = $2`,
+  [
+    Number(withdrawal.coin_cost),
+    withdrawal.discord_id
+  ]
+);
 
-          // UPDATE STATUS
-          await pool.query(
-            `
-            UPDATE withdrawals
-            SET status = 'rejected'
-            WHERE id = $1
-            `,
-            [withdrawalId]
-          );
+// UPDATE STATUS
+await pool.query(
+  `UPDATE withdrawals
+   SET status = 'rejected'
+   WHERE id = $1`,
+  [withdrawalId]
+);
 
-          await pool.query("COMMIT");
+await pool.query("COMMIT");
           
             UPDATE withdrawals
             SET status = 'rejected'
