@@ -3,19 +3,39 @@ require("dotenv").config();
 const { REST, Routes } = require("discord.js");
 
 const balanceCommand = require("./commands/balance");
-const withdrawCommand = require("./commands/withdraw");
-const leaderboardCommand = require("./commands/leaderboard");
+const withdrawCommand = require("./withdraw");
+const leaderboardCommand = require("./leaderboard");
+const approveCommand = require("./approve");
+const rejectCommand = require("./reject");
 
 const commands = [
   balanceCommand.data.toJSON(),
   withdrawCommand.data.toJSON(),
-  leaderboardCommand.data.toJSON()
+  leaderboardCommand.data.toJSON(),
+  approveCommand.data.toJSON(),
+  rejectCommand.data.toJSON()
 ];
 
-const rest = new REST({ version: "10" })
-  .setToken(process.env.DISCORD_TOKEN);
+if (!process.env.DISCORD_TOKEN) {
+  console.error("❌ DISCORD_TOKEN is missing!");
+  process.exit(1);
+}
 
-async function deployCommands() {
+if (!process.env.CLIENT_ID) {
+  console.error("❌ CLIENT_ID is missing!");
+  process.exit(1);
+}
+
+if (!process.env.GUILD_ID) {
+  console.error("❌ GUILD_ID is missing!");
+  process.exit(1);
+}
+
+const rest = new REST({
+  version: "10"
+}).setToken(process.env.DISCORD_TOKEN);
+
+(async () => {
   try {
     console.log("🔄 Registering slash commands...");
 
@@ -29,15 +49,17 @@ async function deployCommands() {
       }
     );
 
-    console.log("✅ Slash commands registered successfully!");
-    console.log("📋 Commands:");
-    console.log("• /balance");
-    console.log("• /withdraw");
-    console.log("• /leaderboard");
+    console.log("=================================");
+    console.log("✅ Slash commands registered!");
+    console.log("=================================");
+    console.log("Commands:");
+
+    commands.forEach((command) => {
+      console.log(`✅ /${command.name}`);
+    });
+
   } catch (error) {
     console.error("❌ Failed to register commands:");
     console.error(error);
   }
-}
-
-deployCommands();
+})();
