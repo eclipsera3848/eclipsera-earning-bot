@@ -12,14 +12,20 @@ const {
   addCoin
 } = require("./database/database");
 
-// Commands
+// =========================
+// COMMANDS
+// =========================
+
 const balanceCommand = require("./commands/balance");
 const withdrawCommand = require("./withdraw");
 const leaderboardCommand = require("./leaderboard");
 const approveCommand = require("./approve");
 const rejectCommand = require("./reject");
 
-// Discord client
+// =========================
+// DISCORD CLIENT
+// =========================
+
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -33,10 +39,12 @@ const client = new Client({
   ]
 });
 
-// Command collection
+// =========================
+// COMMAND COLLECTION
+// =========================
+
 client.commands = new Collection();
 
-// Register commands
 client.commands.set(
   balanceCommand.data.name,
   balanceCommand
@@ -62,7 +70,10 @@ client.commands.set(
   rejectCommand
 );
 
-// Bot ready
+// =========================
+// BOT READY
+// =========================
+
 client.once("ready", async () => {
   console.log("=================================");
   console.log("✅ Eclipsera Earning Bot is ONLINE");
@@ -79,13 +90,18 @@ client.once("ready", async () => {
   }
 });
 
-// Message earning system
-client.on("messageCreate", async (message) => {
-  // Ignore bots
-  if (message.author.bot) return;
+// =========================
+// MESSAGE EARNING SYSTEM
+// =========================
 
-  // Ignore DMs
-  if (!message.guild) return;
+client.on("messageCreate", async (message) => {
+  if (message.author.bot) {
+    return;
+  }
+
+  if (!message.guild) {
+    return;
+  }
 
   try {
     await addCoin(message.author.id);
@@ -93,16 +109,105 @@ client.on("messageCreate", async (message) => {
     console.log(
       `💰 +1 coin → ${message.author.tag}`
     );
-
   } catch (error) {
     console.error("❌ Coin error:");
     console.error(error);
   }
 });
 
-// Slash commands
+// =========================
+// ALL INTERACTIONS
+// =========================
+
 client.on("interactionCreate", async (interaction) => {
-  if (!interaction.isChatInputCommand()) return;
+
+  // =====================================
+  // WITHDRAW MODAL
+  // =====================================
+
+  if (
+    interaction.isModalSubmit() &&
+    interaction.customId === "withdraw_modal"
+  ) {
+    try {
+      await withdrawCommand.handleInteraction(
+        interaction
+      );
+    } catch (error) {
+      console.error("❌ Withdraw modal error:");
+      console.error(error);
+
+      if (
+        !interaction.replied &&
+        !interaction.deferred
+      ) {
+        try {
+          await interaction.reply({
+            content:
+              "❌ Something went wrong while processing withdrawal.",
+            ephemeral: true
+          });
+        } catch (replyError) {
+          console.error(
+            "❌ Could not send modal error response:"
+          );
+          console.error(replyError);
+        }
+      }
+    }
+
+    return;
+  }
+
+  // =====================================
+  // WITHDRAW APPROVE / REJECT BUTTONS
+  // =====================================
+
+  if (interaction.isButton()) {
+    const customId = interaction.customId;
+
+    if (
+      customId.startsWith("withdraw_approve_") ||
+      customId.startsWith("withdraw_reject_")
+    ) {
+      try {
+        await withdrawCommand.handleInteraction(
+          interaction
+        );
+      } catch (error) {
+        console.error("❌ Withdraw button error:");
+        console.error(error);
+
+        if (
+          !interaction.replied &&
+          !interaction.deferred
+        ) {
+          try {
+            await interaction.reply({
+              content:
+                "❌ Something went wrong while processing withdrawal.",
+              ephemeral: true
+            });
+          } catch (replyError) {
+            console.error(
+              "❌ Could not send button error response:"
+            );
+            console.error(replyError);
+          }
+        }
+      }
+
+      return;
+    }
+  }
+
+  // =====================================
+  // SLASH COMMANDS
+  // =====================================
+
+  if (!interaction.isChatInputCommand()) {
+    return;
+  }
 
   const command = client.commands.get(
     interaction.commandName
@@ -126,29 +231,51 @@ client.on("interactionCreate", async (interaction) => {
 
     console.error(error);
 
-    try {
-      if (interaction.replied || interaction.deferred) {
+    if (
+      interaction.replied ||
+      interaction.deferred
+    ) {
+      try {
         await interaction.followUp({
-          content: "❌ Something went wrong while executing this command.",
+          content:
+            "❌ Something went wrong while executing this command.",
           ephemeral: true
         });
-      } else {
-        await interaction.reply({
-          content: "❌ Something went wrong while executing this command.",
-          ephemeral: true
-        });
+      } catch (replyError) {
+        console.error(
+          "❌ Could not send follow-up error:"
+        );
+        console.error(replyError);
       }
-    } catch (replyError) {
-      console.error("❌ Could not send error response:");
-      console.error(replyError);
+    } else {
+      try {
+        await interaction.reply({
+          content:
+            "❌ Something went wrong while executing this command.",
+          ephemeral: true
+        });
+      } catch (replyError) {
+        console.error(
+          "❌ Could not send error response:"
+        );
+        console.error(replyError);
+      }
     }
   }
 });
 
-// Login
+// =========================
+// LOGIN
+// =========================
+
 if (!process.env.DISCORD_TOKEN) {
-  console.error("❌ DISCORD_TOKEN is missing!");
+  console.error(
+    "❌ DISCORD_TOKEN is missing!"
+  );
+
   process.exit(1);
 }
 
-client.login(process.env.DISCORD_TOKEN);
+client.login(
+  process.env.DISCORD_TOKEN
+);
