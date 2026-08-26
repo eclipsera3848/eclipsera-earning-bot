@@ -4,7 +4,7 @@ const {
 
 const {
   pool
-require('./database/database')
+const db = require('./database/database');
 
 module.exports = {
   data: {
