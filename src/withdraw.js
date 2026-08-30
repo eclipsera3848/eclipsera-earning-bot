@@ -22,25 +22,25 @@ const RESOURCES = {
   iron: {
     name: "Iron",
     emoji: "⛓️",
-    maxCoins: 30000
+    maxCoins: 7500
   },
 
   water: {
     name: "Water",
     emoji: "💧",
-    maxCoins: 20000
+    maxCoins: 10000
   },
 
   stone: {
     name: "Stone",
     emoji: "🪨",
-    maxCoins: 10000
+    maxCoins: 2000
   },
 
   wood: {
     name: "Wood",
     emoji: "🪵",
-    maxCoins: 7500
+    maxCoins: 1000
   },
 
   bread: {
@@ -137,25 +137,25 @@ module.exports = {
         .addOptions(
           new StringSelectMenuOptionBuilder()
             .setLabel("Iron")
-            .setDescription("1000 Iron = 30,000 coins")
+            .setDescription("1000 Iron = 7,500 coins")
             .setEmoji("⛓️")
             .setValue("iron"),
 
           new StringSelectMenuOptionBuilder()
             .setLabel("Water")
-            .setDescription("1000 Water = 20,000 coins")
+            .setDescription("1000 Water = 10,000 coins")
             .setEmoji("💧")
             .setValue("water"),
 
           new StringSelectMenuOptionBuilder()
             .setLabel("Stone")
-            .setDescription("1000 Stone = 10,000 coins")
+            .setDescription("1000 Stone = 2,000 coins")
             .setEmoji("🪨")
             .setValue("stone"),
 
           new StringSelectMenuOptionBuilder()
             .setLabel("Wood")
-            .setDescription("1000 Wood = 7,500 coins")
+            .setDescription("1000 Wood = 1,000 coins")
             .setEmoji("🪵")
             .setValue("wood"),
 
